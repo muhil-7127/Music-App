@@ -40,3 +40,9 @@ lastfm-empty/build/
 *.jks
 .env*
 google-services.json
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
