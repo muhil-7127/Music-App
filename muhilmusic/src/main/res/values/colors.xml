@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Gold accent colors -->
+    <color name="gold_primary">#D4A017</color>
+    <color name="gold_light">#F0C040</color>
+    <color name="gold_dark">#A07810</color>
+    <color name="gold_shimmer">#FFD700</color>
+
+    <!-- Silver / white -->
+    <color name="silver_light">#E8E8E8</color>
+    <color name="silver_mid">#C0C0C0</color>
+    <color name="silver_dark">#8A8A8A</color>
+
+    <!-- Background dark -->
+    <color name="bg_black">#0A0A0F</color>
+    <color name="bg_deep_navy">#0D1117</color>
+    <color name="bg_surface">#161B22</color>
+    <color name="bg_card">#1C2128</color>
+    <color name="bg_elevated">#21262D</color>
+
+    <!-- Text -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#C0C0C0</color>
+    <color name="text_tertiary">#8A8A8A</color>
+    <color name="text_disabled">#555555</color>
+
+    <!-- Player accent -->
+    <color name="player_progress">#D4A017</color>
+    <color name="player_progress_bg">#2A2A35</color>
+
+    <!-- Error -->
+    <color name="error_red">#CF6679</color>
+</resources>

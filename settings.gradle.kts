@@ -39,8 +39,10 @@ include(
     ":metadata",
     ":dsp-core",
     ":audio-dsp",
-    ":domain"
+    ":domain",
+    ":muhilmusic"
 )
+
 
 
 // Use a local copy of BravePipe Extractor.
