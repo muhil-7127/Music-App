@@ -1,4 +1,4 @@
-﻿name: Build Muhil Music APK
+name: Build Muhil Music APK
 
 on:
   push:
@@ -91,7 +91,7 @@ jobs:
           echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
 
       - name: Upload Muhil Music APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Muhil-Music-debug-APK
           path: ${{ steps.verify_apk.outputs.apk_path }}
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload Build Diagnostics on Failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: muhilmusic-build-diagnostics
           path: |

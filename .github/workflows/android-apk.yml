@@ -76,7 +76,7 @@ jobs:
           echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
 
       - name: Upload Muhil Music APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MuhilMusic-Debug-APK
           path: ${{ steps.verify_apk.outputs.apk_path }}
@@ -131,7 +131,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Echo Music APK (if built)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: EchoMusic-Debug-APK
           path: app/build/outputs/apk/**/*.apk
