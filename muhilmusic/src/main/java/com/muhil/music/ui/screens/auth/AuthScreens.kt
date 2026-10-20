@@ -1,5 +1,6 @@
-﻿package com.muhil.music.ui.screens.auth
+package com.muhil.music.ui.screens.auth
 
+import android.app.Activity
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -361,7 +362,7 @@ fun PhoneLoginScreen(
             Spacer(Modifier.height(8.dp))
             GoldGradientButton(
                 text = if (uiState.isLoading) "Sending OTP..." else "Send OTP",
-                onClick = { viewModel.sendOtp(phone, context as Activity) },
+                onClick = { (context as? Activity)?.let { act -> viewModel.sendOtp(phone, act) } },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = phone.isNotBlank() && !uiState.isLoading
             )

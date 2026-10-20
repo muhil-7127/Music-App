@@ -1,4 +1,4 @@
-﻿package com.muhil.music.ui.screens.player
+package com.muhil.music.ui.screens.player
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -66,7 +66,7 @@ fun NowPlayingScreen(
             val infiniteTransition = rememberInfiniteTransition(label = "artGlow")
             val glowScale by infiniteTransition.animateFloat(
                 initialValue = 1f, targetValue = 1.02f,
-                animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse),
                 label = "glowScale"
             )
 
