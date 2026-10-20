@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "714631396715",
+    "project_id": "device-streaming-4ca0784c",
+    "storage_bucket": "device-streaming-4ca0784c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:714631396715:android:2a323c9b4069a8971f202e",
+        "android_client_info": {
+          "package_name": "com.muhil.music"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtJ-tc3CuRa_QZeyVpVVrvtOlmUW-if98"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
