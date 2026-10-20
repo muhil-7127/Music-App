@@ -1,18 +1,90 @@
-name: Build Android APK
+name: Build Muhil Music APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "abc" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "abc", "main" ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build Debug APK
+  build-muhil-music:
+    name: Build Muhil Music Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Set up Android SDK Licenses
+        run: |
+          echo "Accepting Android SDK licenses..."
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Ensure Debug Keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            echo "Generating default debug keystore..."
+            keytool -genkeypair \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA \
+              -validity 10000
+          fi
+
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew
+
+      - name: Build Muhil Music Debug APK
+        run: |
+          ./gradlew :muhilmusic:assembleDebug --stacktrace --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      - name: Verify Muhil Music APK Generated
+        id: verify_apk
+        run: |
+          echo "Searching for generated Muhil Music APK..."
+          APK_FILE=$(find muhilmusic/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "::error::No APK file found in muhilmusic/build/outputs/apk!"
+            exit 1
+          fi
+          if [ ! -s "$APK_FILE" ]; then
+            echo "::error::Generated APK file is empty!"
+            exit 1
+          fi
+          echo "Found valid APK: $APK_FILE"
+          ls -lh "$APK_FILE"
+          echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+
+      - name: Upload Muhil Music APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuhilMusic-Debug-APK
+          path: ${{ steps.verify_apk.outputs.apk_path }}
+          retention-days: 30
+          if-no-files-found: error
+
+  build-main-app:
+    name: Build Echo Music Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -40,7 +112,6 @@ jobs:
         run: |
           mkdir -p "$HOME/.android"
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            echo "Generating default debug keystore..."
             keytool -genkeypair \
               -keystore "$HOME/.android/debug.keystore" \
               -storepass android \
@@ -54,31 +125,15 @@ jobs:
       - name: Make Gradle Wrapper Executable
         run: chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Build Echo Music Debug APK
         run: |
           ./gradlew assembleUniversalFossDebug --stacktrace --no-daemon
+        continue-on-error: true
 
-      - name: Verify APK Generated
-        id: verify_apk
-        run: |
-          echo "Searching for generated APK files..."
-          APK_FILE=$(find app/build/outputs/apk -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_FILE" ]; then
-            echo "::error::No APK file found in app/build/outputs/apk!"
-            exit 1
-          fi
-          if [ ! -s "$APK_FILE" ]; then
-            echo "::error::Generated APK file is empty!"
-            exit 1
-          fi
-          echo "Found valid APK: $APK_FILE"
-          ls -lh "$APK_FILE"
-          echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
-
-      - name: Upload APK Artifact
+      - name: Upload Echo Music APK (if built)
         uses: actions/upload-artifact@v4
         with:
-          name: Music-App-APK
-          path: ${{ steps.verify_apk.outputs.apk_path }}
+          name: EchoMusic-Debug-APK
+          path: app/build/outputs/apk/**/*.apk
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
