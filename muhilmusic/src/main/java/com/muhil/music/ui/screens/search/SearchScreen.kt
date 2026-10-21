@@ -74,33 +74,31 @@ fun SearchScreen(
                 singleLine = true
             )
 
-            // Category filter tabs
+            // Category filter chips
             if (query.isNotBlank()) {
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = BgBlack,
-                    contentColor = GoldPrimary,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = GoldPrimary,
-                            height = 2.dp
-                        )
-                    },
-                    divider = { GoldDivider() }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
+                        val isSelected = selectedTab == index
+                        Surface(
                             onClick = { selectedTab = index },
-                            text = {
-                                Text(
-                                    text = title,
-                                    color = if (selectedTab == index) GoldPrimary else SilverDark,
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
-                        )
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (isSelected) GoldPrimary else BgCard,
+                            border = BorderStroke(1.dp, if (isSelected) GoldLight else GoldPrimary.copy(alpha = 0.3f))
+                        ) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) BgBlack else TextPrimary
+                                ),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                 }
             }
