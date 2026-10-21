@@ -8,6 +8,8 @@ import com.muhil.music.domain.model.*
 import com.muhil.music.media.MuhilPlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -105,10 +107,10 @@ class MusicViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                kotlinx.coroutines.coroutineScope {
-                    val featuredDef = kotlinx.coroutines.async { repository.getFeaturedSongs(forceRefresh) }
-                    val artistsDef = kotlinx.coroutines.async { repository.getTopArtists(forceRefresh) }
-                    val albumsDef = kotlinx.coroutines.async { repository.getTrendingAlbums(forceRefresh) }
+                coroutineScope {
+                    val featuredDef = async { repository.getFeaturedSongs(forceRefresh) }
+                    val artistsDef = async { repository.getTopArtists(forceRefresh) }
+                    val albumsDef = async { repository.getTrendingAlbums(forceRefresh) }
 
                     val featured = featuredDef.await()
                     val artists = artistsDef.await()
@@ -204,10 +206,10 @@ class MusicViewModel @Inject constructor(
             delay(300)
             _uiState.update { it.copy(isSearching = true, searchError = null) }
             try {
-                kotlinx.coroutines.coroutineScope {
-                    val songsDef = kotlinx.coroutines.async { repository.searchOnlineSongs(query) }
-                    val artistsDef = kotlinx.coroutines.async { repository.searchOnlineArtists(query) }
-                    val albumsDef = kotlinx.coroutines.async { repository.searchOnlineAlbums(query) }
+                coroutineScope {
+                    val songsDef = async { repository.searchOnlineSongs(query) }
+                    val artistsDef = async { repository.searchOnlineArtists(query) }
+                    val albumsDef = async { repository.searchOnlineAlbums(query) }
 
                     val songs = songsDef.await()
                     val artists = artistsDef.await()

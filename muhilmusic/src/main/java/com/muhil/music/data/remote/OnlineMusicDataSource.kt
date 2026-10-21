@@ -4,6 +4,8 @@ import com.muhil.music.domain.model.Album
 import com.muhil.music.domain.model.Artist
 import com.muhil.music.domain.model.Song
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import timber.log.Timber
@@ -75,9 +77,9 @@ class OnlineMusicDataSource @Inject constructor() {
      */
     suspend fun getFeaturedSongs(): List<Song> = withContext(Dispatchers.IO) {
         val trendingQueries = listOf("Top Hits 2024", "Taylor Swift", "The Weeknd", "Coldplay", "A.R. Rahman")
-        kotlinx.coroutines.coroutineScope {
+        coroutineScope {
             val deferreds = trendingQueries.map { term ->
-                kotlinx.coroutines.async { searchSongs(term, limit = 6) }
+                async { searchSongs(term, limit = 6) }
             }
             val allResults = mutableListOf<Song>()
             val seenIds = mutableSetOf<Long>()

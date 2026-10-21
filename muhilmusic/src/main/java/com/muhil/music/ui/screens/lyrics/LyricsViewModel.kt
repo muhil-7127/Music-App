@@ -25,6 +25,7 @@ class LyricsViewModel @Inject constructor(
     private val _currentLineIndex = MutableStateFlow(-1)
     val currentLineIndex: StateFlow<Int> = _currentLineIndex.asStateFlow()
 
+    private var syncedLines: List<LyricLine> = emptyList()
     private var loadJob: kotlinx.coroutines.Job? = null
 
     fun loadLyrics(song: Song) {
