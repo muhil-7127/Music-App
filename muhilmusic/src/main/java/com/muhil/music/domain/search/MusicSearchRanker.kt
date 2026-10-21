@@ -72,9 +72,9 @@ class MusicSearchRanker @Inject constructor() {
 
         // Known prominent Tamil artists & composers
         private val KNOWN_ARTISTS = setOf(
-            "anirudh", "anirudh ravichander", "a.r. rahman", "ar rahman", "rahman",
+            "anirudh", "anirudh ravichander", "a.r. rahman", "ar rahman", "a r rahman", "rahman",
             "yuvan", "yuvan shankar raja", "harris jayaraj", "ilaiyaraaja", "ilayaraja",
-            "santhosh narayanan", "sid sriram", "dhanush", "g.v. prakash", "gv prakash",
+            "santhosh narayanan", "sid sriram", "dhanush", "g.v. prakash", "gv prakash", "g v prakash",
             "d. imman", "d imman", "vidyasagar", "deva", "hiphop tamizha", "sam cs",
             "s.p. balasubrahmanyam", "spb", "k.j. yesudas", "hariharan", "unni menon",
             "shreya ghoshal", "chinmayi", "jonita gandhi", "andrea jeremiah", "pradeep kumar",
@@ -151,9 +151,10 @@ class MusicSearchRanker @Inject constructor() {
     fun detectIntent(query: String): QueryIntent {
         val norm = normalize(query)
         val transliterated = transliterateTamil(norm)
+        val canon = canonicalize(transliterated).replace(Regex("\\b([a-z])\\s+([a-z])\\b"), "$1$2")
 
         // Check Movie Intent
-        if (KNOWN_MOVIES.contains(norm) || KNOWN_MOVIES.contains(transliterated)) {
+        if (KNOWN_MOVIES.contains(norm) || KNOWN_MOVIES.contains(transliterated) || KNOWN_MOVIES.contains(canon)) {
             return QueryIntent.MOVIE
         }
         if (norm.contains("soundtrack") || norm.contains("ost") || norm.contains("movie") || norm.contains("film")) {
@@ -161,7 +162,7 @@ class MusicSearchRanker @Inject constructor() {
         }
 
         // Check Artist Intent
-        if (KNOWN_ARTISTS.contains(norm) || KNOWN_ARTISTS.contains(transliterated)) {
+        if (KNOWN_ARTISTS.contains(norm) || KNOWN_ARTISTS.contains(transliterated) || KNOWN_ARTISTS.contains(canon)) {
             return QueryIntent.ARTIST
         }
 

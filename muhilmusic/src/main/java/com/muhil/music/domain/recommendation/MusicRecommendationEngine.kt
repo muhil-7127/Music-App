@@ -185,7 +185,7 @@ class MusicRecommendationEngine @Inject constructor() {
         }
         if (profile.preferredLanguage.equals("Tamil", ignoreCase = true) && isCandidateTamil) {
             score += 25.0
-            reasons.add("Preferred Language Bonus (Tamil)")
+            reasons.add("Preferred Language Match (Tamil)")
         }
 
         val isSeedBollywood = hasBollywoodAffinity(seed)
