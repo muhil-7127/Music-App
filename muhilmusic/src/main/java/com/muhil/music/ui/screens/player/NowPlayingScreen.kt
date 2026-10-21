@@ -432,14 +432,14 @@ fun NowPlayingScreen(
                         Text("Stop playback after:", style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary))
                         Spacer(Modifier.height(12.dp))
 
-                        val presets = listOf(5, 10, 15, 30, 45, 60)
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
+                        val presetsRow1 = listOf(5, 10, 15)
+                        val presetsRow2 = listOf(30, 45, 60)
+
+                        Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.height(110.dp)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(presets) { minutes ->
+                            presetsRow1.forEach { minutes ->
                                 val isSelected = sleepTimerState.isActive && sleepTimerState.totalMinutes == minutes
                                 Surface(
                                     onClick = {
@@ -448,7 +448,39 @@ fun NowPlayingScreen(
                                     },
                                     shape = RoundedCornerShape(10.dp),
                                     color = if (isSelected) GoldPrimary else BgElevated,
-                                    border = BorderStroke(1.dp, if (isSelected) GoldLight else SilverDark.copy(alpha = 0.4f))
+                                    border = BorderStroke(1.dp, if (isSelected) GoldLight else SilverDark.copy(alpha = 0.4f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "$minutes min",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            color = if (isSelected) BgBlack else TextPrimary,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            presetsRow2.forEach { minutes ->
+                                val isSelected = sleepTimerState.isActive && sleepTimerState.totalMinutes == minutes
+                                Surface(
+                                    onClick = {
+                                        viewModel.startSleepTimer(minutes)
+                                        showSleepTimerDialog = false
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) GoldPrimary else BgElevated,
+                                    border = BorderStroke(1.dp, if (isSelected) GoldLight else SilverDark.copy(alpha = 0.4f)),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Text(
                                         text = "$minutes min",

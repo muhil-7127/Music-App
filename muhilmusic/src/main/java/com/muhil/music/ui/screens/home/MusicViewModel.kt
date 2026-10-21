@@ -394,7 +394,7 @@ class MusicViewModel @Inject constructor(
             ?: s.tamilHits.find { it.id == songId }
             ?: s.tamilMelodies.find { it.id == songId }
             ?: s.tamilClassics.find { it.id == songId }
-            ?: s.soundtracks.flatMap { it.tracks }.find { it.id == songId }
+            ?: s.searchSoundtracks.flatMap { it.tracks }.find { it.id == songId }
             ?: s.tamilSoundtracks.flatMap { it.tracks }.find { it.id == songId }
             ?: s.recommendations.find { it.id == songId }
             ?: s.searchResults.find { it.id == songId }
