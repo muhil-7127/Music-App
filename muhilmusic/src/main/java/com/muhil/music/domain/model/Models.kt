@@ -22,6 +22,7 @@ data class Song(
         const val PROVIDER_LOCAL = "local"
         const val PROVIDER_AUDIUS = "audius"
         const val PROVIDER_ITUNES = "itunes"
+        const val PROVIDER_SAAVN = "saavn"
     }
 }
 

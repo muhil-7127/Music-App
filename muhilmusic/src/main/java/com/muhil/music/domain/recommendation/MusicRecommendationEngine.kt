@@ -226,7 +226,7 @@ class MusicRecommendationEngine @Inject constructor() {
         }
 
         // 6. Provider Quality Signal (Reward authorized full-length recordings over 30s clips)
-        if (!candidate.isPreview && candidate.provider == Song.PROVIDER_AUDIUS) {
+        if (!candidate.isPreview && (candidate.provider == Song.PROVIDER_AUDIUS || candidate.provider == Song.PROVIDER_SAAVN || candidate.provider == Song.PROVIDER_LOCAL)) {
             score += SCORE_FULL_TRACK_BONUS
             reasons.add("Authorized Full Track")
         }

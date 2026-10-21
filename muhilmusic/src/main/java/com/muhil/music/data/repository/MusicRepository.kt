@@ -5,6 +5,7 @@ import com.muhil.music.data.local.entity.*
 import com.muhil.music.data.local.preferences.UserPreferencesManager
 import com.muhil.music.data.mediastore.MediaStoreDataSource
 import com.muhil.music.data.remote.AudiusMusicDataSource
+import com.muhil.music.data.remote.JioSaavnMusicDataSource
 import com.muhil.music.data.remote.OnlineLyricsDataSource
 import com.muhil.music.data.remote.OnlineMusicDataSource
 import com.muhil.music.domain.model.*
@@ -26,6 +27,7 @@ import javax.inject.Singleton
 
 @Singleton
 class MusicRepository @Inject constructor(
+    private val jioSaavnMusic: JioSaavnMusicDataSource,
     private val audiusMusic: AudiusMusicDataSource,
     private val onlineMusic: OnlineMusicDataSource,
     private val onlineLyrics: OnlineLyricsDataSource,
@@ -69,7 +71,7 @@ class MusicRepository @Inject constructor(
     private val ttlRecommendationsMs = 10 * 60 * 1000L
 
     // ==========================================
-    // Online Music (Primary Source: Audius Full Tracks + iTunes Fallback)
+    // Online Music (100% Authorized Full Tracks: JioSaavn + Audius)
     // ==========================================
 
     suspend fun getFeaturedSongs(forceRefresh: Boolean = false): List<Song> = coroutineScope {
@@ -77,31 +79,28 @@ class MusicRepository @Inject constructor(
             featuredCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
         }
 
+        val saavnDeferred = async { jioSaavnMusic.searchSongs("Tamil Top Hits 2024", limit = 25) }
         val audiusDeferred = async { audiusMusic.getTrendingTracks(limit = 25) }
-        val itunesDeferred = async { onlineMusic.getFeaturedSongs() }
 
-        val audiusTracks = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
-        val itunesTracks = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
+        val saavnTracks = try { saavnDeferred.await() } catch (_: Exception) { emptyList() }
+        val audiusTracks = try { audiusDeferred.await() } catch (_: Exception) { emptyList() }
 
         val seen = mutableSetOf<String>()
         val combined = mutableListOf<Song>()
 
-        // Prioritize authorized full-length Audius tracks
-        for (song in audiusTracks) {
-            val key = normalizeKey(song.title, song.artist)
-            if (seen.add(key)) combined.add(song)
-        }
-        // Supplement with iTunes catalog tracks
-        for (song in itunesTracks) {
-            val key = normalizeKey(song.title, song.artist)
-            if (seen.add(key)) combined.add(song)
+        // 100% Full-length songs only: filter out any preview or empty URI
+        for (song in (saavnTracks + audiusTracks)) {
+            if (!song.isPreview && song.uri.isNotBlank()) {
+                val key = normalizeKey(song.title, song.artist)
+                if (seen.add(key)) combined.add(song)
+            }
         }
 
-        // Offline / Network Failure Fallback: use database favorites and recents to prevent blank screen
+        // Offline / Network Failure Fallback: use database favorites and recents
         if (combined.isEmpty()) {
-            val recent = try { recentlyPlayedDao.getRecentlyPlayed().first().map { it.toSong() } } catch (e: Exception) { emptyList() }
-            val favorites = try { favoriteDao.getAllFavorites().first().map { it.toSong() } } catch (e: Exception) { emptyList() }
-            val fallback = (recent + favorites).distinctBy { normalizeKey(it.title, it.artist) }
+            val recent = try { recentlyPlayedDao.getRecentlyPlayed().first().map { it.toSong() } } catch (_: Exception) { emptyList() }
+            val favorites = try { favoriteDao.getAllFavorites().first().map { it.toSong() } } catch (_: Exception) { emptyList() }
+            val fallback = (recent + favorites).filter { !it.isPreview && it.uri.isNotBlank() }.distinctBy { normalizeKey(it.title, it.artist) }
             if (fallback.isNotEmpty()) {
                 return@coroutineScope fallback
             }
@@ -119,22 +118,20 @@ class MusicRepository @Inject constructor(
             genreCache[cacheKey]?.let { if (it.isValid(ttlGenreMs)) return@coroutineScope it.data }
         }
 
+        val saavnDeferred = async { jioSaavnMusic.searchSongs(genre, limit = 25) }
         val audiusDeferred = async { audiusMusic.getTrendingTracksByGenre(genre, limit = 25) }
-        val itunesDeferred = async { onlineMusic.getGenreSongs(genre) }
 
-        val audiusTracks = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
-        val itunesTracks = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
+        val saavnTracks = try { saavnDeferred.await() } catch (_: Exception) { emptyList() }
+        val audiusTracks = try { audiusDeferred.await() } catch (_: Exception) { emptyList() }
 
         val seen = mutableSetOf<String>()
         val combined = mutableListOf<Song>()
 
-        for (song in audiusTracks) {
-            val key = normalizeKey(song.title, song.artist)
-            if (seen.add(key)) combined.add(song)
-        }
-        for (song in itunesTracks) {
-            val key = normalizeKey(song.title, song.artist)
-            if (seen.add(key)) combined.add(song)
+        for (song in (saavnTracks + audiusTracks)) {
+            if (!song.isPreview && song.uri.isNotBlank()) {
+                val key = normalizeKey(song.title, song.artist)
+                if (seen.add(key)) combined.add(song)
+            }
         }
 
         if (combined.isNotEmpty()) {
@@ -144,8 +141,9 @@ class MusicRepository @Inject constructor(
     }
 
     /**
-     * Precision search ranking: fetches candidate pool across Audius, iTunes (IN store),
+     * Precision search ranking: fetches candidate pool across JioSaavn (full tracks), Audius (full tracks),
      * and local music, then ranks using MusicSearchRanker.
+     * Guarantees 100% full song playback with zero 30s previews.
      */
     suspend fun searchOnlineRanked(
         query: String,
@@ -172,39 +170,41 @@ class MusicRepository @Inject constructor(
         val transliterated = searchRanker.transliterateTamil(cleanQuery)
         val hasTransliteration = transliterated != cleanQuery
 
-        // Parallel queries to Audius and iTunes
-        val audiusSongsDef = async { audiusMusic.searchSongs(cleanQuery, limit = 30) }
-        val itunesSongsDef = async { onlineMusic.searchSongs(cleanQuery, limit = 30, country = "IN") }
-        val transliteratedItunesDef = if (hasTransliteration) {
-            async { onlineMusic.searchSongs(transliterated, limit = 25, country = "IN") }
+        // Parallel queries to JioSaavn and Audius for full-length streams
+        val saavnSongsDef = async { jioSaavnMusic.searchSongs(cleanQuery, limit = 35) }
+        val transliteratedSaavnDef = if (hasTransliteration) {
+            async { jioSaavnMusic.searchSongs(transliterated, limit = 25) }
         } else null
+        val audiusSongsDef = async { audiusMusic.searchSongs(cleanQuery, limit = 25) }
+        val localSongsDef = async { try { mediaStore.searchSongs(cleanQuery) } catch (_: Exception) { emptyList() } }
+
+        val saavnAlbumsDef = async { jioSaavnMusic.searchAlbums(cleanQuery, limit = 15) }
+        val audiusAlbumsDef = async { audiusMusic.searchPlaylists(cleanQuery, limit = 15) }
 
         val audiusArtistsDef = async { audiusMusic.searchArtists(cleanQuery, limit = 15) }
         val itunesArtistsDef = async { onlineMusic.searchArtists(cleanQuery, limit = 15, country = "IN") }
 
-        val audiusAlbumsDef = async { audiusMusic.searchPlaylists(cleanQuery, limit = 15) }
-        val itunesAlbumsDef = async { onlineMusic.searchAlbums(cleanQuery, limit = 15, country = "IN") }
-
-        val localSongsDef = async { try { mediaStore.searchSongs(cleanQuery) } catch (_: Exception) { emptyList() } }
-
         val rawSongs = mutableListOf<Song>()
-        rawSongs.addAll(try { audiusSongsDef.await() } catch (_: Exception) { emptyList() })
-        rawSongs.addAll(try { itunesSongsDef.await() } catch (_: Exception) { emptyList() })
-        if (transliteratedItunesDef != null) {
-            rawSongs.addAll(try { transliteratedItunesDef.await() } catch (_: Exception) { emptyList() })
+        rawSongs.addAll(try { saavnSongsDef.await() } catch (_: Exception) { emptyList() })
+        if (transliteratedSaavnDef != null) {
+            rawSongs.addAll(try { transliteratedSaavnDef.await() } catch (_: Exception) { emptyList() })
         }
+        rawSongs.addAll(try { audiusSongsDef.await() } catch (_: Exception) { emptyList() })
         rawSongs.addAll(try { localSongsDef.await() } catch (_: Exception) { emptyList() })
+
+        // STRICT FILTER: Zero Previews! Only full-length playable tracks!
+        val fullSongs = rawSongs.filter { !it.isPreview && it.uri.isNotBlank() }
 
         val rawArtists = mutableListOf<Artist>()
         rawArtists.addAll(try { audiusArtistsDef.await() } catch (_: Exception) { emptyList() })
         rawArtists.addAll(try { itunesArtistsDef.await() } catch (_: Exception) { emptyList() })
 
         val rawAlbums = mutableListOf<Album>()
+        rawAlbums.addAll(try { saavnAlbumsDef.await() } catch (_: Exception) { emptyList() })
         rawAlbums.addAll(try { audiusAlbumsDef.await() } catch (_: Exception) { emptyList() })
-        rawAlbums.addAll(try { itunesAlbumsDef.await() } catch (_: Exception) { emptyList() })
 
         val favIds = try { favoriteDao.getAllFavorites().first().map { it.songId }.toSet() } catch (_: Exception) { emptySet() }
-        val songsWithFav = rawSongs.map { if (it.id in favIds) it.copy(isFavorite = true) else it }
+        val songsWithFav = fullSongs.map { if (it.id in favIds) it.copy(isFavorite = true) else it }
 
         val ranked = searchRanker.rankSearchResults(
             query = cleanQuery,
@@ -238,23 +238,19 @@ class MusicRepository @Inject constructor(
         if (!forceRefresh) {
             tamilHitsCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
         }
-        val queries = listOf("Tamil Hits 2024", "Anirudh Ravichander", "A.R. Rahman Tamil", "Hukum Jailer")
-        val deferreds = queries.map { q -> async { onlineMusic.searchSongs(q, limit = 12, country = "IN") } }
-        val audiusDef = async { audiusMusic.searchSongs("Tamil", limit = 10) }
+        val saavnDef = async { jioSaavnMusic.getTamilHits(limit = 35) }
+        val audiusDef = async { audiusMusic.searchSongs("Tamil Hits", limit = 15) }
+
+        val saavnList = try { saavnDef.await() } catch (_: Exception) { emptyList() }
+        val audiusList = try { audiusDef.await() } catch (_: Exception) { emptyList() }
 
         val all = mutableListOf<Song>()
         val seen = mutableSetOf<String>()
-        for (d in deferreds) {
-            val list = try { d.await() } catch (_: Exception) { emptyList() }
-            for (s in list) {
+        for (s in (saavnList + audiusList)) {
+            if (!s.isPreview && s.uri.isNotBlank()) {
                 val key = normalizeKey(s.title, s.artist)
                 if (seen.add(key)) all.add(s)
             }
-        }
-        val audiusList = try { audiusDef.await() } catch (_: Exception) { emptyList() }
-        for (s in audiusList) {
-            val key = normalizeKey(s.title, s.artist)
-            if (seen.add(key)) all.add(s)
         }
 
         if (all.isNotEmpty()) {
@@ -267,47 +263,36 @@ class MusicRepository @Inject constructor(
         if (!forceRefresh) {
             tamilSoundtracksCache?.let { if (it.isValid(ttlMetaMs)) return@coroutineScope it.data }
         }
-        val queries = listOf("Leo Soundtrack", "Vikram Soundtrack", "Jailer Soundtrack", "Ponniyin Selvan", "Master Tamil")
-        val deferreds = queries.map { q -> async { onlineMusic.searchAlbums(q, limit = 5, country = "IN") } }
-        val all = mutableListOf<MovieSoundtrack>()
-        val seen = mutableSetOf<String>()
-        for (d in deferreds) {
-            val list = try { d.await() } catch (_: Exception) { emptyList() }
-            for (a in list) {
-                val key = a.title.trim().lowercase()
-                if (seen.add(key)) {
-                    all.add(
-                        MovieSoundtrack(
-                            movieName = a.title.replace(Regex("(?i)original motion picture soundtrack|soundtrack|ost"), "").trim().ifEmpty { a.title },
-                            composer = a.artist,
-                            albumArtUri = a.artUri,
-                            tracks = emptyList()
-                        )
-                    )
-                }
-            }
+        val soundtracks = try {
+            jioSaavnMusic.getTamilSoundtracks(limit = 8)
+        } catch (_: Exception) {
+            emptyList()
         }
-        if (all.isNotEmpty()) {
-            tamilSoundtracksCache = CacheEntry(all)
+
+        if (soundtracks.isNotEmpty()) {
+            tamilSoundtracksCache = CacheEntry(soundtracks)
         }
-        all
+        soundtracks
     }
 
     suspend fun getTamilClassics(forceRefresh: Boolean = false): List<Song> = coroutineScope {
         if (!forceRefresh) {
             tamilClassicsCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
         }
-        val queries = listOf("Ilaiyaraaja Tamil Classics", "SPB Tamil Hits", "A.R. Rahman 90s Tamil")
-        val deferreds = queries.map { q -> async { onlineMusic.searchSongs(q, limit = 10, country = "IN") } }
-        val all = mutableListOf<Song>()
-        val seen = mutableSetOf<String>()
-        for (d in deferreds) {
-            val list = try { d.await() } catch (_: Exception) { emptyList() }
-            for (s in list) {
-                val key = normalizeKey(s.title, s.artist)
-                if (seen.add(key)) all.add(s)
-            }
+        val classics = try {
+            jioSaavnMusic.getTamilClassics(limit = 30)
+                .filter { !it.isPreview && it.uri.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
         }
+
+        val seen = mutableSetOf<String>()
+        val all = mutableListOf<Song>()
+        for (s in classics) {
+            val key = normalizeKey(s.title, s.artist)
+            if (seen.add(key)) all.add(s)
+        }
+
         if (all.isNotEmpty()) {
             tamilClassicsCache = CacheEntry(all)
         }
@@ -318,17 +303,20 @@ class MusicRepository @Inject constructor(
         if (!forceRefresh) {
             tamilMelodiesCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
         }
-        val queries = listOf("Tamil Melody Hits", "Sid Sriram Tamil", "Harris Jayaraj Melodies")
-        val deferreds = queries.map { q -> async { onlineMusic.searchSongs(q, limit = 10, country = "IN") } }
-        val all = mutableListOf<Song>()
-        val seen = mutableSetOf<String>()
-        for (d in deferreds) {
-            val list = try { d.await() } catch (_: Exception) { emptyList() }
-            for (s in list) {
-                val key = normalizeKey(s.title, s.artist)
-                if (seen.add(key)) all.add(s)
-            }
+        val melodies = try {
+            jioSaavnMusic.getTamilMelodies(limit = 30)
+                .filter { !it.isPreview && it.uri.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
         }
+
+        val seen = mutableSetOf<String>()
+        val all = mutableListOf<Song>()
+        for (s in melodies) {
+            val key = normalizeKey(s.title, s.artist)
+            if (seen.add(key)) all.add(s)
+        }
+
         if (all.isNotEmpty()) {
             tamilMelodiesCache = CacheEntry(all)
         }
@@ -363,6 +351,11 @@ class MusicRepository @Inject constructor(
         if (!forceRefresh) {
             albumsCache?.let { if (it.isValid(ttlMetaMs)) return@coroutineScope it.data }
         }
+        val saavnAlbums = try { jioSaavnMusic.searchAlbums("Tamil Top Soundtrack", limit = 15) } catch (_: Exception) { emptyList() }
+        if (saavnAlbums.isNotEmpty()) {
+            albumsCache = CacheEntry(saavnAlbums)
+            return@coroutineScope saavnAlbums
+        }
         val itunesAlbums = try { onlineMusic.getTrendingAlbums() } catch (e: Exception) { emptyList() }
         if (itunesAlbums.isNotEmpty()) {
             albumsCache = CacheEntry(itunesAlbums)
@@ -372,6 +365,7 @@ class MusicRepository @Inject constructor(
 
     /**
      * Generates intelligent, multi-signal similar song recommendations based on a seed song.
+     * Guarantees 100% full song playback with zero previews.
      */
     suspend fun getRecommendations(seed: Song, limit: Int = 15): List<Song> = coroutineScope {
         recommendationsCache[seed.id]?.let {
@@ -382,21 +376,24 @@ class MusicRepository @Inject constructor(
         val artistQuery = seed.artist.trim()
         val genre = if (seed.album.isNotBlank()) seed.album else "Pop"
 
+        val artistSaavnDef = async { jioSaavnMusic.searchSongs(artistQuery, limit = 15) }
         val artistAudiusDef = async { audiusMusic.searchSongs(artistQuery, limit = 15) }
-        val artistItunesDef = async { onlineMusic.searchSongs(artistQuery, limit = 15) }
+        val genreSaavnDef = async { jioSaavnMusic.searchSongs(genre, limit = 20) }
         val genreAudiusDef = async { audiusMusic.getTrendingTracksByGenre(genre, limit = 20) }
-        val genreItunesDef = async { onlineMusic.getGenreSongs(genre, limit = 20) }
         val localSongsDef = async { try { mediaStore.getAllSongs() } catch (e: Exception) { emptyList() } }
 
         val rawCandidates = mutableListOf<Song>()
-        rawCandidates.addAll(try { artistAudiusDef.await() } catch (e: Exception) { emptyList() })
-        rawCandidates.addAll(try { artistItunesDef.await() } catch (e: Exception) { emptyList() })
-        rawCandidates.addAll(try { genreAudiusDef.await() } catch (e: Exception) { emptyList() })
-        rawCandidates.addAll(try { genreItunesDef.await() } catch (e: Exception) { emptyList() })
-        rawCandidates.addAll(try { localSongsDef.await() } catch (e: Exception) { emptyList() })
+        rawCandidates.addAll(try { artistSaavnDef.await() } catch (_: Exception) { emptyList() })
+        rawCandidates.addAll(try { artistAudiusDef.await() } catch (_: Exception) { emptyList() })
+        rawCandidates.addAll(try { genreSaavnDef.await() } catch (_: Exception) { emptyList() })
+        rawCandidates.addAll(try { genreAudiusDef.await() } catch (_: Exception) { emptyList() })
+        rawCandidates.addAll(try { localSongsDef.await() } catch (_: Exception) { emptyList() })
 
         // Supplement with cached featured songs if candidate pool is small
         featuredCache?.data?.let { rawCandidates.addAll(it) }
+
+        // STRICT FILTER: ZERO PREVIEWS! Only genuine full tracks!
+        val fullCandidates = rawCandidates.filter { !it.isPreview && it.uri.isNotBlank() }
 
         // 2. Fetch User Preference Profile
         val favSongs = try { favoriteDao.getAllFavorites().first() } catch (e: Exception) { emptyList() }
@@ -420,7 +417,7 @@ class MusicRepository @Inject constructor(
         )
 
         // 3. Delegate to Recommendation Engine for scoring, diversity capping, and deduplication
-        val ranked = recommendationEngine.rankRecommendations(seed, rawCandidates, userProfile, limit)
+        val ranked = recommendationEngine.rankRecommendations(seed, fullCandidates, userProfile, limit)
 
         if (ranked.isNotEmpty()) {
             recommendationsCache[seed.id] = CacheEntry(ranked)
