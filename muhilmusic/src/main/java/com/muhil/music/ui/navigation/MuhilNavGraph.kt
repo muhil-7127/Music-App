@@ -1,4 +1,4 @@
-﻿package com.muhil.music.ui.navigation
+package com.muhil.music.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -16,6 +16,7 @@ import com.muhil.music.ui.screens.lyrics.LyricsScreen
 import com.muhil.music.ui.screens.search.SearchScreen
 import com.muhil.music.ui.screens.settings.SettingsScreen
 import com.muhil.music.ui.screens.playlists.*
+import com.muhil.music.ui.screens.equalizer.EqualizerScreen
 
 sealed class Screen(val route: String) {
     object Splash      : Screen("splash")
@@ -37,6 +38,7 @@ sealed class Screen(val route: String) {
     object Favorites   : Screen("favorites")
     object RecentPlay  : Screen("recent")
     object Settings    : Screen("settings")
+    object Equalizer   : Screen("equalizer")
     object CreatePlaylist : Screen("create_playlist")
 }
 
@@ -118,6 +120,9 @@ fun MuhilNavGraph(
         }
         composable(Screen.Settings.route) {
             SettingsScreen(navController = navController)
+        }
+        composable(Screen.Equalizer.route) {
+            EqualizerScreen(navController = navController)
         }
         composable(Screen.CreatePlaylist.route) {
             CreatePlaylistScreen(navController = navController)

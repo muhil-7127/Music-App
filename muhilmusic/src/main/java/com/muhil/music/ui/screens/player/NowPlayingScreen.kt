@@ -34,8 +34,10 @@ fun NowPlayingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val playback by viewModel.playbackState.collectAsState()
+    val sleepTimerState by viewModel.sleepTimerState.collectAsState()
     val song = playback.currentSong
     var showQueueSheet by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -59,6 +61,39 @@ fun NowPlayingScreen(
                     fontWeight = FontWeight.Bold, color = TextPrimary
                 ))
                 Spacer(Modifier.weight(1f))
+
+                // Sleep Timer icon / active countdown pill
+                if (sleepTimerState.isActive) {
+                    Surface(
+                        onClick = { showSleepTimerDialog = true },
+                        shape = RoundedCornerShape(16.dp),
+                        color = GoldPrimary.copy(alpha = 0.2f),
+                        border = BorderStroke(1.dp, GoldPrimary)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = sleepTimerState.formattedRemaining,
+                                style = MaterialTheme.typography.labelSmall.copy(color = GoldPrimary, fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                } else {
+                    IconButton(onClick = { showSleepTimerDialog = true }) {
+                        Icon(Icons.Rounded.Bedtime, contentDescription = "Sleep Timer", tint = SilverMid)
+                    }
+                }
+
+                // Equalizer button
+                IconButton(onClick = { navController.navigate(Screen.Equalizer.route) }) {
+                    Icon(Icons.Rounded.Equalizer, contentDescription = "Equalizer", tint = GoldPrimary)
+                }
+
+                // Lyrics button
                 IconButton(onClick = { navController.navigate(Screen.Lyrics.route) }) {
                     Icon(Icons.Rounded.Lyrics, contentDescription = "Lyrics", tint = GoldPrimary)
                 }
@@ -140,7 +175,7 @@ fun NowPlayingScreen(
                         }
                     }
                 }
-                IconButton(onClick = { song?.let { viewModel.toggleFavorite(it.id) } }) {
+                IconButton(onClick = { song?.let { viewModel.toggleFavorite(it) } }) {
                     Icon(
                         imageVector = if (song != null && song.id in uiState.favoriteSongIds)
                             Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -343,6 +378,98 @@ fun NowPlayingScreen(
                     }
                 }
             }
+        }
+
+        // Sleep Timer Dialog
+        if (showSleepTimerDialog) {
+            AlertDialog(
+                onDismissRequest = { showSleepTimerDialog = false },
+                containerColor = BgCard,
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Bedtime, null, tint = GoldPrimary)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Sleep Timer",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                },
+                text = {
+                    Column {
+                        if (sleepTimerState.isActive) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = GoldPrimary.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("Timer Active", style = MaterialTheme.typography.labelSmall.copy(color = GoldPrimary))
+                                        Text(
+                                            "${sleepTimerState.formattedRemaining} remaining",
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        )
+                                    }
+                                    TextButton(onClick = {
+                                        viewModel.cancelSleepTimer()
+                                        showSleepTimerDialog = false
+                                    }) {
+                                        Text("Turn Off", color = ErrorRed, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        Text("Stop playback after:", style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary))
+                        Spacer(Modifier.height(12.dp))
+
+                        val presets = listOf(5, 10, 15, 30, 45, 60)
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.height(110.dp)
+                        ) {
+                            items(presets) { minutes ->
+                                val isSelected = sleepTimerState.isActive && sleepTimerState.totalMinutes == minutes
+                                Surface(
+                                    onClick = {
+                                        viewModel.startSleepTimer(minutes)
+                                        showSleepTimerDialog = false
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) GoldPrimary else BgElevated,
+                                    border = BorderStroke(1.dp, if (isSelected) GoldLight else SilverDark.copy(alpha = 0.4f))
+                                ) {
+                                    Text(
+                                        text = "$minutes min",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            color = if (isSelected) BgBlack else TextPrimary,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSleepTimerDialog = false }) {
+                        Text("Close", color = GoldPrimary)
+                    }
+                }
+            )
         }
     }
 }

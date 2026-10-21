@@ -31,6 +31,12 @@ class UserPreferencesManager @Inject constructor(
         val KEY_AUDIO_QUALITY = stringPreferencesKey("audio_quality")
         val KEY_USER_NAME = stringPreferencesKey("user_display_name")
         val KEY_PROFILE_PICTURE_URI = stringPreferencesKey("profile_picture_uri")
+        val KEY_EQUALIZER_ENABLED = booleanPreferencesKey("equalizer_enabled")
+        val KEY_EQUALIZER_PRESET = stringPreferencesKey("equalizer_preset")
+        val KEY_EQUALIZER_BANDS = stringPreferencesKey("equalizer_bands_json")
+        val KEY_BASS_BOOST_STRENGTH = intPreferencesKey("bass_boost_strength")
+        val KEY_DISLIKED_SONG_IDS = stringSetPreferencesKey("disliked_song_ids")
+        val KEY_DISLIKED_ARTISTS = stringSetPreferencesKey("disliked_artists")
 
         const val LANG_TAMIL = "Tamil"
         const val LANG_ENGLISH = "English"
@@ -216,6 +222,86 @@ class UserPreferencesManager @Inject constructor(
             } else {
                 preferences[KEY_PROFILE_PICTURE_URI] = uri.trim()
             }
+        }
+    }
+
+    val equalizerEnabled: Flow<Boolean> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences -> preferences[KEY_EQUALIZER_ENABLED] ?: false }
+
+    suspend fun setEqualizerEnabled(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[KEY_EQUALIZER_ENABLED] = enabled }
+    }
+
+    val equalizerPreset: Flow<String> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences -> preferences[KEY_EQUALIZER_PRESET] ?: "Flat" }
+
+    suspend fun setEqualizerPreset(preset: String) {
+        dataStore.edit { preferences -> preferences[KEY_EQUALIZER_PRESET] = preset }
+    }
+
+    val equalizerBands: Flow<Map<Int, Int>> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences ->
+            val jsonStr = preferences[KEY_EQUALIZER_BANDS] ?: return@map emptyMap()
+            try {
+                val obj = JSONObject(jsonStr)
+                val map = mutableMapOf<Int, Int>()
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    map[k.toInt()] = obj.getInt(k)
+                }
+                map
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        }
+
+    suspend fun setEqualizerBands(bands: Map<Int, Int>) {
+        dataStore.edit { preferences ->
+            val obj = JSONObject()
+            bands.forEach { (band, level) -> obj.put(band.toString(), level) }
+            preferences[KEY_EQUALIZER_BANDS] = obj.toString()
+        }
+    }
+
+    val bassBoostStrength: Flow<Int> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences -> preferences[KEY_BASS_BOOST_STRENGTH] ?: 0 }
+
+    suspend fun setBassBoostStrength(strength: Int) {
+        dataStore.edit { preferences -> preferences[KEY_BASS_BOOST_STRENGTH] = strength }
+    }
+
+    val dislikedSongIds: Flow<Set<Long>> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences ->
+            preferences[KEY_DISLIKED_SONG_IDS]?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
+        }
+
+    suspend fun addDislikedSong(songId: Long) {
+        dataStore.edit { preferences ->
+            val current = preferences[KEY_DISLIKED_SONG_IDS]?.toMutableSet() ?: mutableSetOf()
+            current.add(songId.toString())
+            preferences[KEY_DISLIKED_SONG_IDS] = current
+        }
+    }
+
+    val dislikedArtists: Flow<Set<String>> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences ->
+            preferences[KEY_DISLIKED_ARTISTS] ?: emptySet()
+        }
+
+    suspend fun addDislikedArtist(artist: String) {
+        val trimmed = artist.trim().lowercase()
+        if (trimmed.isBlank()) return
+        dataStore.edit { preferences ->
+            val current = preferences[KEY_DISLIKED_ARTISTS]?.toMutableSet() ?: mutableSetOf()
+            current.add(trimmed)
+            preferences[KEY_DISLIKED_ARTISTS] = current
         }
     }
 }

@@ -215,4 +215,68 @@ class MusicRecommendationEngineTest {
         assertTrue(scoreTamilWithTamilPref.score > scoreTamilWithEnglishPref.score)
         assertTrue(scoreTamilWithTamilPref.reasons.contains("Preferred Language Match (Tamil)"))
     }
+
+    @Test
+    fun mood_romantic_boostsTamilMelodySongs() {
+        val seed = createSong(1, "Generic Track", "Various Artists", "General", "Tamil")
+        val candidateMelody = createSong(2, "Vizhiye Kadhale", "Sid Sriram", "Melody Hits", "Tamil")
+        val candidateUnrelated = createSong(3, "Heavy Bass EDM", "DJ Electro", "Club 2024", "Electronic")
+
+        val profile = UserPreferenceProfile(currentMood = Mood.ROMANTIC)
+
+        val scoreMelody = engine.scoreCandidate(seed, candidateMelody, profile)
+        val scoreUnrelated = engine.scoreCandidate(seed, candidateUnrelated, profile)
+
+        assertTrue(scoreMelody.score > scoreUnrelated.score)
+        assertTrue(scoreMelody.reasons.any { it.contains("Romantic") || it.contains("Melody") })
+    }
+
+    @Test
+    fun mood_energetic_boostsTamilKuthuSongs() {
+        val seed = createSong(1, "Generic Track", "Various Artists", "General", "Tamil")
+        val candidateKuthu = createSong(2, "Vaathi Raid Kuthu Beat", "Anirudh", "Master", "Tamil")
+        val candidateSlow = createSong(3, "Lofi Study Session", "Chill Artist", "Sleep Night", "Indie")
+
+        val profile = UserPreferenceProfile(currentMood = Mood.ENERGETIC)
+
+        val scoreKuthu = engine.scoreCandidate(seed, candidateKuthu, profile)
+        val scoreSlow = engine.scoreCandidate(seed, candidateSlow, profile)
+
+        assertTrue(scoreKuthu.score > scoreSlow.score)
+        assertTrue(scoreKuthu.reasons.any { it.contains("Energetic") || it.contains("High-Energy") })
+    }
+
+    @Test
+    fun feedback_dislikedSongIsCompletelyFiltered() {
+        val seed = createSong(1, "Seed Track", "Artist", "Album", "Pop")
+        val candidateDisliked = createSong(2, "Annoying Song", "Artist", "Album", "Pop")
+        val candidateNormal = createSong(3, "Good Song", "Artist", "Album", "Pop")
+
+        val profile = UserPreferenceProfile(dislikedSongIds = setOf(2L))
+
+        val scoreDisliked = engine.scoreCandidate(seed, candidateDisliked, profile)
+        val scoreNormal = engine.scoreCandidate(seed, candidateNormal, profile)
+
+        assertEquals(0.0, scoreDisliked.score, 0.001)
+        assertTrue(scoreNormal.score > 0)
+
+        val recs = engine.rankRecommendations(seed, listOf(candidateDisliked, candidateNormal), profile)
+        assertFalse(recs.any { it.id == 2L })
+        assertTrue(recs.any { it.id == 3L })
+    }
+
+    @Test
+    fun feedback_dislikedArtistIsFiltered() {
+        val seed = createSong(1, "Seed Track", "Seed Artist", "Album", "Pop")
+        val candidateDislikedArtist = createSong(2, "Song A", "Disliked Singer", "Album", "Pop")
+        val candidateNormal = createSong(3, "Song B", "Loved Singer", "Album", "Pop")
+
+        val profile = UserPreferenceProfile(dislikedArtists = setOf("disliked singer"))
+
+        val scoreDisliked = engine.scoreCandidate(seed, candidateDislikedArtist, profile)
+        val scoreNormal = engine.scoreCandidate(seed, candidateNormal, profile)
+
+        assertEquals(0.0, scoreDisliked.score, 0.001)
+        assertTrue(scoreNormal.score > 0)
+    }
 }

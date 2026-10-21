@@ -432,6 +432,25 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(8.dp))
 
+            // Audio & Sound Effects section
+            SettingsSection(title = "Audio & Sound Effects") {
+                SettingsClickableItem(
+                    icon = Icons.Filled.GraphicEq,
+                    label = "Audio Equalizer & Bass Boost",
+                    value = "Custom EQ Presets • Tap to tune",
+                    onClick = { navController.navigate("equalizer") }
+                )
+                val sleepTimerState by musicViewModel.sleepTimerState.collectAsState()
+                SettingsClickableItem(
+                    icon = Icons.Filled.Bedtime,
+                    label = "Sleep Timer",
+                    value = if (sleepTimerState.isActive) "${sleepTimerState.formattedRemaining} remaining" else "Off • Set playback timer",
+                    onClick = { navController.navigate("now_playing") }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             // App section
             SettingsSection(title = "Playback & Streaming") {
                 SettingsItem(icon = Icons.Filled.MusicNote, label = "Streaming Mode", value = "100% Full Track Streaming (JioSaavn + Audius)")

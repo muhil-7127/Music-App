@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.muhil.music.domain.model.Song
+import com.muhil.music.domain.recommendation.Mood
 import com.muhil.music.domain.search.MovieSoundtrack
 import com.muhil.music.ui.components.*
 import com.muhil.music.ui.navigation.Screen
@@ -104,6 +105,39 @@ fun HomeScreen(
                     )
                 }
 
+                // 4b. Mood-Based Discovery Selector Chips
+                item {
+                    Column(modifier = Modifier.padding(top = 4.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "HOW ARE YOU FEELING?",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = GoldPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                            )
+                            if (uiState.selectedMood != null) {
+                                Text(
+                                    text = "Reset",
+                                    style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary),
+                                    modifier = Modifier.clickable { viewModel.selectMood(uiState.selectedMood) }
+                                )
+                            }
+                        }
+                        HomeMoodChipsRow(
+                            selectedMood = uiState.selectedMood,
+                            onMoodSelected = { viewModel.selectMood(it) }
+                        )
+                    }
+                }
+
                 // 5. Genre Filter Discovery Chips
                 item {
                     LazyRow(
@@ -145,6 +179,8 @@ fun HomeScreen(
                                 FeaturedSongCard(
                                     song = song,
                                     isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                    isFavorite = song.id in uiState.favoriteSongIds,
+                                    onFavoriteClick = { viewModel.toggleFavorite(song) },
                                     onClick = {
                                         viewModel.playSong(song)
                                         navController.navigate(Screen.NowPlaying.route)
@@ -174,6 +210,8 @@ fun HomeScreen(
                                     FeaturedSongCard(
                                         song = song,
                                         isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                        isFavorite = song.id in uiState.favoriteSongIds,
+                                        onFavoriteClick = { viewModel.toggleFavorite(song) },
                                         onClick = {
                                             viewModel.playSong(song)
                                             navController.navigate(Screen.NowPlaying.route)
@@ -227,6 +265,8 @@ fun HomeScreen(
                                     FeaturedSongCard(
                                         song = song,
                                         isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                        isFavorite = song.id in uiState.favoriteSongIds,
+                                        onFavoriteClick = { viewModel.toggleFavorite(song) },
                                         onClick = {
                                             viewModel.playSong(song)
                                             navController.navigate(Screen.NowPlaying.route)
@@ -277,6 +317,8 @@ fun HomeScreen(
                                     FeaturedSongCard(
                                         song = song,
                                         isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                        isFavorite = song.id in uiState.favoriteSongIds,
+                                        onFavoriteClick = { viewModel.toggleFavorite(song) },
                                         onClick = {
                                             viewModel.playSong(song)
                                             navController.navigate(Screen.NowPlaying.route)
@@ -291,7 +333,13 @@ fun HomeScreen(
                 // 8. ADAPTIVE PERSONALIZED RECOMMENDATIONS ("Similar Vibes" / "Made For You")
                 if (uiState.recommendations.isNotEmpty()) {
                     val seedTitle = uiState.recommendationSeed?.title
-                    val recHeading = if (!seedTitle.isNullOrBlank()) "Similar Vibes • Because of $seedTitle" else "Made For You • Recommendations"
+                    val recHeading = if (uiState.selectedMood != null) {
+                        "${uiState.selectedMood?.emoji} ${uiState.selectedMood?.displayName} Vibes • Made For You"
+                    } else if (!seedTitle.isNullOrBlank()) {
+                        "Similar Vibes • Because of $seedTitle"
+                    } else {
+                        "Made For You • Recommendations"
+                    }
                     item {
                         SectionHeader(recHeading) {}
                     }
@@ -304,6 +352,8 @@ fun HomeScreen(
                                 FeaturedSongCard(
                                     song = recSong,
                                     isPlaying = playbackState.currentSong?.id == recSong.id && playbackState.isPlaying,
+                                    isFavorite = recSong.id in uiState.favoriteSongIds,
+                                    onFavoriteClick = { viewModel.toggleFavorite(recSong) },
                                     onClick = {
                                         viewModel.playSong(recSong)
                                         navController.navigate(Screen.NowPlaying.route)
@@ -340,6 +390,8 @@ fun HomeScreen(
                                 FeaturedSongCard(
                                     song = song,
                                     isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                    isFavorite = song.id in uiState.favoriteSongIds,
+                                    onFavoriteClick = { viewModel.toggleFavorite(song) },
                                     onClick = {
                                         viewModel.playSong(song)
                                         navController.navigate(Screen.NowPlaying.route)
@@ -704,6 +756,45 @@ fun SoundtrackMiniCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+fun HomeMoodChipsRow(
+    selectedMood: Mood?,
+    onMoodSelected: (Mood) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier
+    ) {
+        items(Mood.entries.toTypedArray()) { mood ->
+            val isSelected = selectedMood == mood
+            Surface(
+                onClick = { onMoodSelected(mood) },
+                shape = RoundedCornerShape(20.dp),
+                color = if (isSelected) GoldPrimary else BgCard,
+                border = BorderStroke(1.dp, if (isSelected) GoldLight else GoldPrimary.copy(alpha = 0.25f)),
+                shadowElevation = if (isSelected) 6.dp else 0.dp
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                ) {
+                    Text(text = mood.emoji, fontSize = 14.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = mood.displayName,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) BgBlack else TextPrimary
+                        )
+                    )
+                }
+            }
         }
     }
 }

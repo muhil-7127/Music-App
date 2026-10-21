@@ -9,6 +9,7 @@ import com.muhil.music.data.remote.JioSaavnMusicDataSource
 import com.muhil.music.data.remote.OnlineLyricsDataSource
 import com.muhil.music.data.remote.OnlineMusicDataSource
 import com.muhil.music.domain.model.*
+import com.muhil.music.domain.recommendation.Mood
 import com.muhil.music.domain.recommendation.MusicRecommendationEngine
 import com.muhil.music.domain.recommendation.UserPreferenceProfile
 import com.muhil.music.domain.search.MovieSoundtrack
@@ -367,9 +368,15 @@ class MusicRepository @Inject constructor(
      * Generates intelligent, multi-signal similar song recommendations based on a seed song.
      * Guarantees 100% full song playback with zero previews.
      */
-    suspend fun getRecommendations(seed: Song, limit: Int = 15): List<Song> = coroutineScope {
-        recommendationsCache[seed.id]?.let {
-            if (it.isValid(ttlRecommendationsMs)) return@coroutineScope it.data
+    suspend fun getRecommendations(
+        seed: Song,
+        currentMood: Mood? = null,
+        limit: Int = 15
+    ): List<Song> = coroutineScope {
+        if (currentMood == null) {
+            recommendationsCache[seed.id]?.let {
+                if (it.isValid(ttlRecommendationsMs)) return@coroutineScope it.data
+            }
         }
 
         // 1. Gather candidate pool across providers concurrently
@@ -401,6 +408,8 @@ class MusicRepository @Inject constructor(
         val skippedSongs = try { userPreferencesManager.skippedSongIds.first() } catch (_: Exception) { emptySet() }
         val customPlayCounts = try { userPreferencesManager.playCounts.first() } catch (_: Exception) { emptyMap() }
         val prefLang = try { userPreferencesManager.preferredLanguage.first() } catch (_: Exception) { "Tamil" }
+        val dislikedSongIds = try { userPreferencesManager.dislikedSongIds.first() } catch (_: Exception) { emptySet() }
+        val dislikedArtists = try { userPreferencesManager.dislikedArtists.first() } catch (_: Exception) { emptySet() }
 
         val recentCounts = recentSongs.groupingBy { it.songId }.eachCount()
         val mergedPlayCounts = (recentCounts.keys + customPlayCounts.keys).associateWith {
@@ -413,16 +422,89 @@ class MusicRepository @Inject constructor(
             recentSongIds     = recentSongs.map { it.songId },
             skippedSongIds    = skippedSongs,
             playCounts        = mergedPlayCounts,
-            preferredLanguage = prefLang
+            preferredLanguage = prefLang,
+            currentMood       = currentMood,
+            dislikedSongIds   = dislikedSongIds,
+            dislikedArtists   = dislikedArtists
         )
 
         // 3. Delegate to Recommendation Engine for scoring, diversity capping, and deduplication
         val ranked = recommendationEngine.rankRecommendations(seed, fullCandidates, userProfile, limit)
 
-        if (ranked.isNotEmpty()) {
+        if (currentMood == null && ranked.isNotEmpty()) {
             recommendationsCache[seed.id] = CacheEntry(ranked)
         }
         ranked
+    }
+
+    /**
+     * Generates pure, full-track music recommendations tailored to an explicit mood.
+     */
+    suspend fun getMoodRecommendations(mood: Mood, limit: Int = 15): List<Song> = coroutineScope {
+        val query1 = when (mood) {
+            Mood.ROMANTIC -> "Tamil Melody"
+            Mood.RELAXED -> "Tamil Chill"
+            Mood.HAPPY -> "Tamil Dance"
+            Mood.ENERGETIC -> "Tamil Kuthu"
+            Mood.PARTY -> "Party Hits"
+            Mood.FOCUS -> "Instrumental Melody"
+            Mood.SLEEP -> "Lofi Melody"
+            Mood.SAD -> "Tamil Sad Songs"
+            Mood.MOTIVATIONAL -> "Tamil Motivation"
+        }
+        val query2 = mood.keywords.firstOrNull() ?: mood.displayName
+
+        val saavn1Def = async { jioSaavnMusic.searchSongs(query1, limit = 20) }
+        val saavn2Def = async { jioSaavnMusic.searchSongs(query2, limit = 20) }
+        val audiusDef = async { audiusMusic.getTrendingTracksByGenre(mood.genres.firstOrNull() ?: "pop", limit = 15) }
+
+        val rawCandidates = mutableListOf<Song>()
+        rawCandidates.addAll(try { saavn1Def.await() } catch (_: Exception) { emptyList() })
+        rawCandidates.addAll(try { saavn2Def.await() } catch (_: Exception) { emptyList() })
+        rawCandidates.addAll(try { audiusDef.await() } catch (_: Exception) { emptyList() })
+        featuredCache?.data?.let { rawCandidates.addAll(it) }
+
+        val fullCandidates = rawCandidates.filter { !it.isPreview && it.uri.isNotBlank() }
+
+        val favSongs = try { favoriteDao.getAllFavorites().first() } catch (e: Exception) { emptyList() }
+        val recentSongs = try { recentlyPlayedDao.getRecentlyPlayed().first() } catch (e: Exception) { emptyList() }
+        val skippedSongs = try { userPreferencesManager.skippedSongIds.first() } catch (_: Exception) { emptySet() }
+        val customPlayCounts = try { userPreferencesManager.playCounts.first() } catch (_: Exception) { emptyMap() }
+        val prefLang = try { userPreferencesManager.preferredLanguage.first() } catch (_: Exception) { "Tamil" }
+        val dislikedSongIds = try { userPreferencesManager.dislikedSongIds.first() } catch (_: Exception) { emptySet() }
+        val dislikedArtists = try { userPreferencesManager.dislikedArtists.first() } catch (_: Exception) { emptySet() }
+
+        val recentCounts = recentSongs.groupingBy { it.songId }.eachCount()
+        val mergedPlayCounts = (recentCounts.keys + customPlayCounts.keys).associateWith {
+            (recentCounts[it] ?: 0) + (customPlayCounts[it] ?: 0)
+        }
+
+        val userProfile = UserPreferenceProfile(
+            favoriteSongIds   = favSongs.map { it.songId }.toSet(),
+            favoriteArtists   = favSongs.map { it.artist.trim().lowercase() }.toSet(),
+            recentSongIds     = recentSongs.map { it.songId },
+            skippedSongIds    = skippedSongs,
+            playCounts        = mergedPlayCounts,
+            preferredLanguage = prefLang,
+            currentMood       = mood,
+            dislikedSongIds   = dislikedSongIds,
+            dislikedArtists   = dislikedArtists
+        )
+
+        val pseudoSeed = fullCandidates.firstOrNull() ?: Song(
+            id = -999L, title = mood.displayName, artist = "Various Artists", album = mood.displayName,
+            duration = 180000L, albumArtUri = null, uri = "dummy", isOnline = true, provider = Song.PROVIDER_SAAVN
+        )
+
+        recommendationEngine.rankRecommendations(pseudoSeed, fullCandidates, userProfile, limit)
+    }
+
+    suspend fun recordDislikedSong(songId: Long) {
+        userPreferencesManager.addDislikedSong(songId)
+    }
+
+    suspend fun recordDislikedArtist(artist: String) {
+        userPreferencesManager.addDislikedArtist(artist)
     }
 
     private fun normalizeKey(title: String, artist: String): String {

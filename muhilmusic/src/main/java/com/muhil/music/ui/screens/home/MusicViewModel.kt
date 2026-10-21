@@ -8,7 +8,10 @@ import com.muhil.music.domain.model.*
 import com.muhil.music.domain.search.MovieSoundtrack
 import com.muhil.music.domain.search.QueryIntent
 import com.muhil.music.domain.search.RankedSearchResult
+import com.muhil.music.domain.recommendation.Mood
+import com.muhil.music.media.AudioEqualizerManager
 import com.muhil.music.media.MuhilPlayerController
+import com.muhil.music.media.SleepTimerState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -16,6 +19,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -23,6 +28,7 @@ data class MusicUiState(
     val featuredSongs: List<Song> = emptyList(),
     val genreSongs: List<Song> = emptyList(),
     val selectedGenre: String = "All",
+    val selectedMood: Mood? = null,
     val topArtists: List<Artist> = emptyList(),
     val trendingAlbums: List<Album> = emptyList(),
     val recommendations: List<Song> = emptyList(),
@@ -64,13 +70,18 @@ data class MusicUiState(
 @HiltViewModel
 class MusicViewModel @Inject constructor(
     private val repository: MusicRepository,
-    val playerController: MuhilPlayerController
+    val playerController: MuhilPlayerController,
+    val equalizerManager: AudioEqualizerManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MusicUiState())
     val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
+    val sleepTimerState: StateFlow<SleepTimerState> = playerController.sleepTimerState
+    val equalizerState = equalizerManager.uiState
+
+    private val favMutex = Mutex()
 
     private var searchJob: Job? = null
     private var recommendationsJob: Job? = null
@@ -374,33 +385,145 @@ class MusicViewModel @Inject constructor(
     fun toggleShuffle() = playerController.toggleShuffle()
     fun toggleRepeat() = playerController.toggleRepeat()
 
+    fun resolveSong(songId: Long): Song? {
+        val cur = playbackState.value.currentSong
+        if (cur?.id == songId) return cur
+
+        val s = _uiState.value
+        return s.featuredSongs.find { it.id == songId }
+            ?: s.tamilHits.find { it.id == songId }
+            ?: s.tamilMelodies.find { it.id == songId }
+            ?: s.tamilClassics.find { it.id == songId }
+            ?: s.soundtracks.flatMap { it.tracks }.find { it.id == songId }
+            ?: s.tamilSoundtracks.flatMap { it.tracks }.find { it.id == songId }
+            ?: s.recommendations.find { it.id == songId }
+            ?: s.searchResults.find { it.id == songId }
+            ?: s.genreSongs.find { it.id == songId }
+            ?: s.localSongs.find { it.id == songId }
+            ?: s.favoriteSongs.find { it.id == songId }
+            ?: playerController.playbackState.value.queue.find { it.id == songId }
+    }
+
+    /**
+     * Toggles favorite status with immediate optimistic UI updates and mutex-protected Room persistence.
+     */
     fun toggleFavorite(song: Song) {
-        viewModelScope.launch {
-            if (song.id in _uiState.value.favoriteSongIds) {
-                repository.removeFavorite(song.id)
+        val songId = song.id
+        val currentlyFav = songId in _uiState.value.favoriteSongIds
+
+        // 1. Immediate optimistic UI state update
+        _uiState.update { current ->
+            if (currentlyFav) {
+                current.copy(
+                    favoriteSongIds = current.favoriteSongIds - songId,
+                    favoriteSongs = current.favoriteSongs.filter { it.id != songId }
+                )
             } else {
-                repository.addFavorite(song)
+                current.copy(
+                    favoriteSongIds = current.favoriteSongIds + songId,
+                    favoriteSongs = listOf(song) + current.favoriteSongs.filter { it.id != songId }
+                )
+            }
+        }
+
+        // 2. Asynchronously persist to Room under mutex to eliminate race conditions
+        viewModelScope.launch {
+            favMutex.withLock {
+                try {
+                    if (currentlyFav) {
+                        repository.removeFavorite(songId)
+                    } else {
+                        repository.addFavorite(song)
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to persist favorite toggle for ${song.title}")
+                }
             }
         }
     }
 
     fun toggleFavorite(songId: Long) {
-        val song = _uiState.value.featuredSongs.find { it.id == songId }
-            ?: _uiState.value.searchResults.find { it.id == songId }
-            ?: _uiState.value.genreSongs.find { it.id == songId }
-            ?: _uiState.value.localSongs.find { it.id == songId }
-            ?: _uiState.value.favoriteSongs.find { it.id == songId }
-
+        val song = resolveSong(songId)
         if (song != null) {
             toggleFavorite(song)
         } else {
-            viewModelScope.launch {
-                if (songId in _uiState.value.favoriteSongIds) {
-                    repository.removeFavorite(songId)
+            val currentlyFav = songId in _uiState.value.favoriteSongIds
+            if (currentlyFav) {
+                _uiState.update { current ->
+                    current.copy(
+                        favoriteSongIds = current.favoriteSongIds - songId,
+                        favoriteSongs = current.favoriteSongs.filter { it.id != songId }
+                    )
+                }
+                viewModelScope.launch {
+                    favMutex.withLock {
+                        try {
+                            repository.removeFavorite(songId)
+                        } catch (e: Exception) {
+                            Timber.e(e, "Failed to remove favorite $songId")
+                        }
+                    }
                 }
             }
         }
     }
+
+    /**
+     * Selects or clears a mood chip, immediately updating recommendations with high-affinity tracks.
+     */
+    fun selectMood(mood: Mood?) {
+        val newMood = if (_uiState.value.selectedMood == mood) null else mood
+        _uiState.update { it.copy(selectedMood = newMood) }
+
+        recommendationsJob?.cancel()
+        recommendationsJob = viewModelScope.launch {
+            _uiState.update { it.copy(isRecommendationsLoading = true) }
+            try {
+                val recs = if (newMood != null) {
+                    repository.getMoodRecommendations(newMood, limit = 15)
+                } else {
+                    val seed = _uiState.value.recommendationSeed ?: _uiState.value.featuredSongs.firstOrNull()
+                    if (seed != null) repository.getRecommendations(seed, limit = 15) else emptyList()
+                }
+                _uiState.update {
+                    it.copy(
+                        recommendations = recs,
+                        isRecommendationsLoading = false
+                    )
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading mood recommendations for $newMood")
+                _uiState.update { it.copy(isRecommendationsLoading = false) }
+            }
+        }
+    }
+
+    fun markNotInterested(song: Song) {
+        viewModelScope.launch {
+            repository.recordDislikedSong(song.id)
+            _uiState.update { current ->
+                current.copy(
+                    recommendations = current.recommendations.filter { it.id != song.id }
+                )
+            }
+        }
+    }
+
+    fun playMoreLikeThis(song: Song) {
+        viewModelScope.launch {
+            loadRecommendations(song)
+            playSong(song)
+        }
+    }
+
+    fun startSleepTimer(minutes: Int) = playerController.startSleepTimer(minutes)
+    fun cancelSleepTimer() = playerController.cancelSleepTimer()
+
+    fun setEqualizerEnabled(enabled: Boolean) = equalizerManager.setEnabled(enabled)
+    fun setEqualizerBandLevel(bandIndex: Short, levelMb: Short) = equalizerManager.setBandLevel(bandIndex, levelMb)
+    fun setEqualizerPreset(preset: String) = equalizerManager.setPreset(preset)
+    fun setBassBoost(strength: Int) = equalizerManager.setBassBoost(strength)
+    fun resetEqualizer() = equalizerManager.resetToFlat()
 
     fun addToQueue(song: Song) {
         playerController.addToQueue(song)

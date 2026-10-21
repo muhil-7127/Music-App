@@ -292,7 +292,7 @@ fun SearchScreen(
                                                     viewModel.playSong(topSong)
                                                     navController.navigate(Screen.NowPlaying.route)
                                                 },
-                                                onFavoriteClick = { viewModel.toggleFavorite(topSong.id) },
+                                                onFavoriteClick = { viewModel.toggleFavorite(topSong) },
                                                 onQueueClick = { viewModel.addToQueue(topSong) }
                                             )
                                         }
@@ -343,7 +343,7 @@ fun SearchScreen(
                                                     viewModel.playSong(song)
                                                     navController.navigate(Screen.NowPlaying.route)
                                                 },
-                                                onFavoriteClick = { viewModel.toggleFavorite(song.id) }
+                                                onFavoriteClick = { viewModel.toggleFavorite(song) }
                                             )
                                             GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
                                         }
@@ -421,7 +421,7 @@ fun SearchScreen(
                                                     viewModel.playSong(topSong)
                                                     navController.navigate(Screen.NowPlaying.route)
                                                 },
-                                                onFavoriteClick = { viewModel.toggleFavorite(topSong.id) },
+                                                onFavoriteClick = { viewModel.toggleFavorite(topSong) },
                                                 onQueueClick = { viewModel.addToQueue(topSong) }
                                             )
                                         }
@@ -436,7 +436,7 @@ fun SearchScreen(
                                             viewModel.playSong(song)
                                             navController.navigate(Screen.NowPlaying.route)
                                         },
-                                        onFavoriteClick = { viewModel.toggleFavorite(song.id) }
+                                        onFavoriteClick = { viewModel.toggleFavorite(song) }
                                     )
                                     GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
                                 }

@@ -61,7 +61,7 @@ fun AllSongsScreen(
                         viewModel.playSong(song)
                         navController.navigate(Screen.NowPlaying.route)
                     },
-                    onFavoriteClick = { viewModel.toggleFavorite(song.id) }
+                    onFavoriteClick = { viewModel.toggleFavorite(song) }
                 )
                 GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -172,7 +172,7 @@ fun FavoritesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val playback by viewModel.playbackState.collectAsState()
-    val favSongs = viewModel.getFavoriteSongs()
+    val favSongs = uiState.favoriteSongs
 
     Scaffold(
         containerColor = BgBlack,
@@ -189,13 +189,17 @@ fun FavoritesScreen(
                 }
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
                 items(favSongs, key = { it.id }) { song ->
                     SongListItem(
-                        song = song, isFavorite = true,
+                        song = song,
+                        isFavorite = true,
                         isPlaying = playback.currentSong?.id == song.id && playback.isPlaying,
                         onClick = { viewModel.playSong(song); navController.navigate(Screen.NowPlaying.route) },
-                        onFavoriteClick = { viewModel.toggleFavorite(song.id) }
+                        onFavoriteClick = { viewModel.toggleFavorite(song) }
                     )
                     GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }

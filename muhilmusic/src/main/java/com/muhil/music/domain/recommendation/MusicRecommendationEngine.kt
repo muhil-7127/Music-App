@@ -5,6 +5,85 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * 9 Explicit manual moods for instant home discovery.
+ */
+enum class Mood(
+    val id: String,
+    val displayName: String,
+    val emoji: String,
+    val keywords: Set<String>,
+    val genres: Set<String>
+) {
+    HAPPY(
+        id = "happy",
+        displayName = "Happy",
+        emoji = "😊",
+        keywords = setOf("happy", "joy", "dance", "celebration", "fun", "smile", "kuthu", "beat", "cheerful"),
+        genres = setOf("pop", "dance", "tamil")
+    ),
+    RELAXED(
+        id = "relaxed",
+        displayName = "Relaxed",
+        emoji = "😌",
+        keywords = setOf("chill", "lofi", "lo-fi", "soft", "calm", "acoustic", "slow", "peace", "unplugged", "ambient"),
+        genres = setOf("indie", "classical", "r&b")
+    ),
+    ROMANTIC(
+        id = "romantic",
+        displayName = "Romantic",
+        emoji = "💖",
+        keywords = setOf("love", "kadhal", "melody", "heart", "vizhiye", "kanne", "romantic", "soul", "romance"),
+        genres = setOf("melody", "tamil", "bollywood", "pop")
+    ),
+    SAD(
+        id = "sad",
+        displayName = "Sad",
+        emoji = "🌧️",
+        keywords = setOf("sad", "pain", "alone", "broken", "tears", "cry", "melancholy", "heartbreak", "slow"),
+        genres = setOf("indie", "acoustic", "melody")
+    ),
+    ENERGETIC(
+        id = "energetic",
+        displayName = "Energetic",
+        emoji = "⚡",
+        keywords = setOf("fast", "rock", "edm", "workout", "power", "gym", "hype", "beat", "bass", "kuthu", "fire"),
+        genres = setOf("rock", "electronic", "dance", "hip-hop")
+    ),
+    FOCUS(
+        id = "focus",
+        displayName = "Focus",
+        emoji = "🎯",
+        keywords = setOf("instrumental", "study", "piano", "ambient", "synth", "focus", "concentration", "lofi"),
+        genres = setOf("electronic", "classical", "indie")
+    ),
+    SLEEP(
+        id = "sleep",
+        displayName = "Sleep",
+        emoji = "🌙",
+        keywords = setOf("sleep", "night", "lullaby", "dream", "soothing", "peaceful", "soft", "calm", "relax"),
+        genres = setOf("ambient", "acoustic", "classical")
+    ),
+    PARTY(
+        id = "party",
+        displayName = "Party",
+        emoji = "🎉",
+        keywords = setOf("party", "club", "remix", "bass", "dance", "dj", "festival", "kuthu", "drop"),
+        genres = setOf("electronic", "dance", "hip-hop", "pop")
+    ),
+    MOTIVATIONAL(
+        id = "motivational",
+        displayName = "Motivational",
+        emoji = "🔥",
+        keywords = setOf("motivation", "rise", "victory", "champion", "fire", "energy", "power", "winner", "anthem", "beast"),
+        genres = setOf("rock", "hip-hop", "tamil")
+    );
+
+    companion object {
+        fun fromId(id: String?): Mood? = entries.find { it.id.equals(id, ignoreCase = true) }
+    }
+}
+
+/**
  * User listening signals used to personalize song recommendations.
  */
 data class UserPreferenceProfile(
@@ -14,7 +93,10 @@ data class UserPreferenceProfile(
     val skippedSongIds: Set<Long> = emptySet(),
     val playCounts: Map<Long, Int> = emptyMap(),
     val preferredGenres: Set<String> = emptySet(),
-    val preferredLanguage: String = "Tamil"
+    val preferredLanguage: String = "Tamil",
+    val currentMood: Mood? = null,
+    val dislikedSongIds: Set<Long> = emptySet(),
+    val dislikedArtists: Set<String> = emptySet()
 )
 
 /**
@@ -154,6 +236,14 @@ class MusicRecommendationEngine @Inject constructor() {
         val seedArtistNorm = seed.artist.trim().lowercase()
         val candidateArtistNorm = candidate.artist.trim().lowercase()
 
+        // Filter out explicitly disliked songs and artists
+        if (profile.dislikedSongIds.contains(candidate.id)) {
+            return ScoredCandidate(candidate, 0.0, listOf("Explicitly Disliked"))
+        }
+        if (profile.dislikedArtists.any { it.equals(candidateArtistNorm, ignoreCase = true) }) {
+            return ScoredCandidate(candidate, 0.0, listOf("Disliked Artist"))
+        }
+
         // 1. Artist Affinity
         if (seedArtistNorm == candidateArtistNorm) {
             score += SCORE_SAME_ARTIST
@@ -225,7 +315,41 @@ class MusicRecommendationEngine @Inject constructor() {
             reasons.add("Just Played Recently")
         }
 
-        // 6. Provider Quality Signal (Reward authorized full-length recordings over 30s clips)
+        // 6. Explicit Mood & Vibe Affinity
+        profile.currentMood?.let { mood ->
+            val candidateText = "${candidate.title} ${candidate.artist} ${candidate.album}".lowercase()
+            val matchedKeywords = mood.keywords.filter { candidateText.contains(it) }
+            if (matchedKeywords.isNotEmpty()) {
+                val moodBonus = (matchedKeywords.size * 15.0).coerceAtMost(35.0)
+                score += moodBonus
+                reasons.add("Mood Match (${mood.displayName}: +${moodBonus.toInt()})")
+            }
+            if (isCandidateTamil) {
+                when (mood) {
+                    Mood.ROMANTIC, Mood.RELAXED -> {
+                        if (candidateText.contains("melody") || candidateText.contains("kadhal") ||
+                            candidateText.contains("kanne") || candidateText.contains("vizhiye") ||
+                            candidateText.contains("oru") || candidateText.contains("nee")
+                        ) {
+                            score += 20.0
+                            reasons.add("Tamil Melody Boost for ${mood.displayName}")
+                        }
+                    }
+                    Mood.HAPPY, Mood.ENERGETIC, Mood.PARTY, Mood.MOTIVATIONAL -> {
+                        if (candidateText.contains("kuthu") || candidateText.contains("anirudh") ||
+                            candidateText.contains("beat") || candidateText.contains("dhanush") ||
+                            candidateText.contains("santhosh") || candidateText.contains("mass")
+                        ) {
+                            score += 20.0
+                            reasons.add("High-Energy Tamil Boost for ${mood.displayName}")
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
+
+        // 7. Provider Quality Signal (Reward authorized full-length recordings over 30s clips)
         if (!candidate.isPreview && (candidate.provider == Song.PROVIDER_AUDIUS || candidate.provider == Song.PROVIDER_SAAVN || candidate.provider == Song.PROVIDER_LOCAL)) {
             score += SCORE_FULL_TRACK_BONUS
             reasons.add("Authorized Full Track")

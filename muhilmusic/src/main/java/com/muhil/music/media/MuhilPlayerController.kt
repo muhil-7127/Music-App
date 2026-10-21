@@ -13,6 +13,7 @@ import com.muhil.music.domain.model.Song
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,23 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * State representing active background sleep timer.
+ */
+data class SleepTimerState(
+    val isActive: Boolean = false,
+    val remainingSeconds: Long = 0L,
+    val totalMinutes: Int = 0
+) {
+    val formattedRemaining: String
+        get() {
+            if (!isActive || remainingSeconds <= 0) return ""
+            val minutes = remainingSeconds / 60
+            val seconds = remainingSeconds % 60
+            return "%02d:%02d".format(minutes, seconds)
+        }
+}
+
 @Singleton
 class MuhilPlayerController @Inject constructor(
     @ApplicationContext private val context: Context
@@ -29,8 +47,12 @@ class MuhilPlayerController @Inject constructor(
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
+    private val _sleepTimerState = MutableStateFlow(SleepTimerState())
+    val sleepTimerState: StateFlow<SleepTimerState> = _sleepTimerState.asStateFlow()
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var controller: MediaController? = null
+    private var sleepTimerJob: Job? = null
 
     private var pendingAction: (() -> Unit)? = null
 
@@ -172,5 +194,41 @@ class MuhilPlayerController @Inject constructor(
                 else -> Player.REPEAT_MODE_OFF
             }
         }
+    }
+
+    fun startSleepTimer(minutes: Int) {
+        cancelSleepTimer()
+        if (minutes <= 0) return
+
+        val targetElapsedRealtime = android.os.SystemClock.elapsedRealtime() + (minutes * 60 * 1000L)
+        _sleepTimerState.value = SleepTimerState(
+            isActive = true,
+            remainingSeconds = minutes * 60L,
+            totalMinutes = minutes
+        )
+
+        sleepTimerJob = scope.launch {
+            while (true) {
+                delay(1000)
+                val remainingMs = targetElapsedRealtime - android.os.SystemClock.elapsedRealtime()
+                if (remainingMs <= 0) {
+                    controller?.pause()
+                    _sleepTimerState.value = SleepTimerState(isActive = false, remainingSeconds = 0, totalMinutes = 0)
+                    break
+                }
+                val remainingSec = (remainingMs + 999) / 1000
+                _sleepTimerState.value = SleepTimerState(
+                    isActive = true,
+                    remainingSeconds = remainingSec,
+                    totalMinutes = minutes
+                )
+            }
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerState.value = SleepTimerState(isActive = false, remainingSeconds = 0, totalMinutes = 0)
     }
 }

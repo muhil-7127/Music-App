@@ -172,6 +172,8 @@ fun formatDuration(ms: Long): String {
 fun FeaturedSongCard(
     song: Song,
     isPlaying: Boolean = false,
+    isFavorite: Boolean = false,
+    onFavoriteClick: (() -> Unit)? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -207,6 +209,26 @@ fun FeaturedSongCard(
                             .padding(6.dp)
                     )
                 }
+
+                if (onFavoriteClick != null) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(32.dp)
+                            .background(BgBlack.copy(alpha = 0.65f), CircleShape)
+                            .clickable(onClick = onFavoriteClick),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = "Favorite",
+                            tint = if (isFavorite) GoldPrimary else TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .size(36.dp)
