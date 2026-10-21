@@ -103,6 +103,35 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      - name: Build Muhil Music Release App Bundle (AAB)
+        run: ./gradlew :muhilmusic:bundleRelease --stacktrace --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      - name: Verify Muhil Music Release AAB Generated
+        id: verify_aab
+        run: |
+          AAB_FILE=$(find muhilmusic/build/outputs/bundle -name "*.aab" -type f | head -n 1)
+          if [ -z "$AAB_FILE" ]; then
+            echo "::error::No AAB file found under muhilmusic/build/outputs/bundle/"
+            exit 1
+          fi
+          if [ ! -s "$AAB_FILE" ]; then
+            echo "::error::Generated AAB is empty!"
+            exit 1
+          fi
+          echo "Found Release AAB: $AAB_FILE"
+          ls -lh "$AAB_FILE"
+          echo "aab_path=$AAB_FILE" >> $GITHUB_OUTPUT
+
+      - name: Upload Muhil Music Release AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Muhil-Music-release-AAB
+          path: ${{ steps.verify_aab.outputs.aab_path }}
+          retention-days: 30
+          if-no-files-found: error
+
       - name: Upload Build Diagnostics on Failure
         if: failure()
         uses: actions/upload-artifact@v4

@@ -24,7 +24,8 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): MuhilDatabase =
         Room.databaseBuilder(context, MuhilDatabase::class.java, "muhil_music.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(MuhilDatabase.MIGRATION_1_2)
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 
     @Provides fun provideFavoriteDao(db: MuhilDatabase): FavoriteDao = db.favoriteDao()

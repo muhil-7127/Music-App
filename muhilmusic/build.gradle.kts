@@ -22,8 +22,8 @@ android {
         applicationId = "com.muhil.music"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -36,6 +36,21 @@ android {
             storePassword = "android"
             storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
         }
+        create("release") {
+            val envStoreFile = System.getenv("RELEASE_STORE_FILE")
+            if (envStoreFile != null && file(envStoreFile).exists()) {
+                storeFile = file(envStoreFile)
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "android"
+            } else {
+                // Safe fallback to debug key for local test/CI verification builds
+                storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
     }
 
     buildTypes {
@@ -43,6 +58,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {

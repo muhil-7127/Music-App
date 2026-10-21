@@ -180,4 +180,47 @@ class MusicSearchRankerTest {
         assertEquals(QueryIntent.ARTIST, ranker.detectIntent("A.R. Rahman"))
         assertEquals(QueryIntent.SONG, ranker.detectIntent("Arabic Kuthu Song"))
     }
+
+    @Test
+    fun transliteration_commonPhoneticVariations_handled() {
+        val song = createSong(1, "Kaadhal Sadugudu", "A.R. Rahman", "Alaipayuthey")
+        val other = createSong(2, "Sadhu Koodu", "Various", "Album")
+
+        // User typed "Kadhal Sadugudu" (short 'a')
+        val result = ranker.rankSearchResults(
+            rawQuery = "Kadhal Sadugudu",
+            songs = listOf(other, song)
+        )
+
+        assertNotNull(result.topMatch)
+        assertEquals(song.id, result.topMatch?.id)
+    }
+
+    @Test
+    fun artistSearchIntent_ranksArtistTracksAboveRandomTitleMatches() {
+        val artistTrack = createSong(1, "Hukum", "Anirudh Ravichander", "Jailer")
+        val randomSongWithWordAnirudh = createSong(2, "Anirudh Fan Anthem", "Unknown Group", "Tribute Singles")
+
+        val result = ranker.rankSearchResults(
+            rawQuery = "Anirudh",
+            songs = listOf(randomSongWithWordAnirudh, artistTrack)
+        )
+
+        assertEquals(QueryIntent.ARTIST, result.intent)
+        assertEquals(artistTrack.id, result.topMatch?.id)
+    }
+
+    @Test
+    fun exactSongTitle_strictlyBeatsPopularBroadMatches() {
+        val exactSong = createSong(10, "Why This Kolaveri Di", "Dhanush", "3")
+        val popularMashup = createSong(20, "Kolaveri Di Mega Dance Mix", "DJ World", "Club Hits 2024")
+
+        val result = ranker.rankSearchResults(
+            rawQuery = "Why This Kolaveri Di",
+            songs = listOf(popularMashup, exactSong)
+        )
+
+        assertEquals(exactSong.id, result.topMatch?.id)
+        assertEquals(exactSong.id, result.rankedSongs.first().id)
+    }
 }
