@@ -15,9 +15,13 @@ import androidx.compose.ui.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.muhil.music.domain.model.Song
+import com.muhil.music.domain.search.MovieSoundtrack
+import com.muhil.music.domain.search.QueryIntent
 import com.muhil.music.ui.components.*
 import com.muhil.music.ui.navigation.Screen
 import com.muhil.music.ui.screens.home.MusicViewModel
@@ -32,10 +36,14 @@ fun SearchScreen(
     val playback by viewModel.playbackState.collectAsState()
     var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
-    val tabs = remember { listOf("All", "Songs", "Artists", "Albums") }
+    val tabs = remember { listOf("All", "Songs", "Soundtracks", "Artists", "Albums") }
 
     val trendingPills = remember {
-        listOf("Taylor Swift", "Coldplay", "The Weeknd", "A.R. Rahman", "Billie Eilish", "Anirudh", "Ed Sheeran", "Dua Lipa")
+        listOf(
+            "Leo", "Jailer", "Vikram", "Arabic Kuthu",
+            "Anirudh", "A.R. Rahman", "Ilaiyaraaja", "Ponniyin Selvan",
+            "Kaadhal", "Harris Jayaraj", "Taylor Swift", "Coldplay"
+        )
     }
 
     LaunchedEffect(query) {
@@ -44,13 +52,13 @@ fun SearchScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(BgBlack)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            MuhilTopBar(title = "Search Web Music", onBack = { navController.popBackStack() })
+            MuhilTopBar(title = "Search Muhil Music", onBack = { navController.popBackStack() })
 
-            // Search input field
+            // Search input field with intent badge
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search songs, artists, albums online...", color = TextTertiary) },
+                placeholder = { Text("Song, movie (e.g. Leo), artist, Tamil lyrics...", color = TextTertiary) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null, tint = GoldPrimary) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -76,13 +84,13 @@ fun SearchScreen(
 
             // Category filter chips
             if (query.isNotBlank()) {
-                Row(
+                LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    tabs.forEachIndexed { index, title ->
+                    itemsIndexed(tabs) { index, title ->
                         val isSelected = selectedTab == index
                         Surface(
                             onClick = { selectedTab = index },
@@ -104,62 +112,138 @@ fun SearchScreen(
             }
 
             if (query.isBlank()) {
-                // Discover Trending Searches
-                Column(
+                // Recent Searches & Trending Tamil Searches
+                LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp)
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    Text(
-                        "Trending Searches",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        trendingPills.forEach { pill ->
-                            Surface(
-                                onClick = { query = pill },
-                                shape = RoundedCornerShape(20.dp),
-                                color = BgCard,
-                                border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.3f))
-                            ) {
+                    if (uiState.searchHistory.isNotEmpty()) {
+                        item {
+                            Column {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        Icons.Rounded.TrendingUp,
-                                        contentDescription = null,
-                                        tint = GoldPrimary,
-                                        modifier = Modifier.size(16.dp)
+                                    Text(
+                                        "Recent Searches",
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
                                     )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(pill, style = MaterialTheme.typography.labelMedium.copy(color = TextPrimary))
+                                    TextButton(onClick = { viewModel.clearSearchHistory() }) {
+                                        Text("Clear All", color = GoldPrimary, style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    uiState.searchHistory.forEach { historyItem ->
+                                        Surface(
+                                            onClick = { query = historyItem },
+                                            shape = RoundedCornerShape(20.dp),
+                                            color = BgCard,
+                                            border = BorderStroke(1.dp, SilverDark.copy(alpha = 0.4f))
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.History,
+                                                    contentDescription = null,
+                                                    tint = SilverMid,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(
+                                                    historyItem,
+                                                    style = MaterialTheme.typography.labelMedium.copy(color = TextPrimary)
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Icon(
+                                                    Icons.Filled.Close,
+                                                    contentDescription = "Remove",
+                                                    tint = TextTertiary,
+                                                    modifier = Modifier
+                                                        .size(14.dp)
+                                                        .clickable { viewModel.removeSearchHistoryItem(historyItem) }
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                    Spacer(Modifier.height(36.dp))
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Rounded.TravelExplore,
-                                contentDescription = null,
-                                tint = GoldPrimary.copy(alpha = 0.35f),
-                                modifier = Modifier.size(72.dp)
+
+                    item {
+                        Column {
+                            Text(
+                                "Popular & Tamil Searches",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
                             )
                             Spacer(Modifier.height(12.dp))
-                            Text(
-                                "Search millions of tracks available on the web",
-                                style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary)
-                            )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                trendingPills.forEach { pill ->
+                                    Surface(
+                                        onClick = { query = pill },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = BgCard,
+                                        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.3f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.TrendingUp,
+                                                contentDescription = null,
+                                                tint = GoldPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(pill, style = MaterialTheme.typography.labelMedium.copy(color = TextPrimary))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 36.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Rounded.TravelExplore,
+                                    contentDescription = null,
+                                    tint = GoldPrimary.copy(alpha = 0.35f),
+                                    modifier = Modifier.size(64.dp)
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    "Search by song title, movie soundtrack, artist, or lyrics",
+                                    style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary)
+                                )
+                            }
                         }
                     }
                 }
@@ -169,7 +253,7 @@ fun SearchScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = GoldPrimary)
                         Spacer(Modifier.height(14.dp))
-                        Text("Searching web tracks...", style = MaterialTheme.typography.bodyMedium.copy(color = SilverMid))
+                        Text("Finding exact matches...", style = MaterialTheme.typography.bodyMedium.copy(color = SilverMid))
                     }
                 }
             } else if (uiState.searchError != null && uiState.searchResults.isEmpty()) {
@@ -186,9 +270,9 @@ fun SearchScreen(
                     }
                 }
             } else {
-                // Results based on tab
+                // Results based on selected tab
                 when (selectedTab) {
-                    0 -> { // All (Songs, Artists, Albums)
+                    0 -> { // All
                         if (uiState.searchResults.isEmpty() && uiState.searchArtists.isEmpty() && uiState.searchAlbums.isEmpty()) {
                             EmptySearchResults(query = query)
                         } else {
@@ -196,30 +280,77 @@ fun SearchScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(bottom = 80.dp)
                             ) {
-                                if (uiState.searchResults.isNotEmpty()) {
+                                // 1. TOP EXACT MATCH HERO CARD
+                                uiState.searchTopMatch?.let { topSong ->
                                     item {
-                                        Text(
-                                            "Songs (${uiState.searchResults.size})",
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.Bold, color = TextPrimary
-                                            ),
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                        )
-                                    }
-                                    items(uiState.searchResults, key = { it.id }) { song ->
-                                        SongListItem(
-                                            song = song,
-                                            isFavorite = song.id in uiState.favoriteSongIds,
-                                            isPlaying = playback.currentSong?.id == song.id && playback.isPlaying,
-                                            onClick = {
-                                                viewModel.playSong(song)
-                                                navController.navigate(Screen.NowPlaying.route)
-                                            },
-                                            onFavoriteClick = { viewModel.toggleFavorite(song.id) }
-                                        )
-                                        GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            TopMatchHeroCard(
+                                                song = topSong,
+                                                isPlaying = playback.currentSong?.id == topSong.id && playback.isPlaying,
+                                                isFavorite = topSong.id in uiState.favoriteSongIds,
+                                                onPlayClick = {
+                                                    viewModel.playSong(topSong)
+                                                    navController.navigate(Screen.NowPlaying.route)
+                                                },
+                                                onFavoriteClick = { viewModel.toggleFavorite(topSong.id) },
+                                                onQueueClick = { viewModel.addToQueue(topSong) }
+                                            )
+                                        }
                                     }
                                 }
+
+                                // 2. MOVIE SOUNDTRACK DEDICATED SECTION
+                                uiState.searchMovieSoundtrack?.let { st ->
+                                    item {
+                                        SoundtrackCard(
+                                            soundtrack = st,
+                                            onPlaySoundtrack = {
+                                                viewModel.playSongs(st.tracks, 0)
+                                                navController.navigate(Screen.NowPlaying.route)
+                                            },
+                                            onSongClick = { song ->
+                                                viewModel.playSong(song)
+                                                navController.navigate(Screen.NowPlaying.route)
+                                            }
+                                        )
+                                    }
+                                }
+
+                                // 3. SONGS LIST (remaining or all ranked)
+                                if (uiState.searchResults.isNotEmpty()) {
+                                    val otherSongs = if (uiState.searchTopMatch != null) {
+                                        uiState.searchResults.filter { it.id != uiState.searchTopMatch?.id }
+                                    } else {
+                                        uiState.searchResults
+                                    }
+
+                                    if (otherSongs.isNotEmpty()) {
+                                        item {
+                                            Text(
+                                                "More Songs (${otherSongs.size})",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.Bold, color = TextPrimary
+                                                ),
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                                            )
+                                        }
+                                        items(otherSongs, key = { it.id }) { song ->
+                                            SongListItem(
+                                                song = song,
+                                                isFavorite = song.id in uiState.favoriteSongIds,
+                                                isPlaying = playback.currentSong?.id == song.id && playback.isPlaying,
+                                                onClick = {
+                                                    viewModel.playSong(song)
+                                                    navController.navigate(Screen.NowPlaying.route)
+                                                },
+                                                onFavoriteClick = { viewModel.toggleFavorite(song.id) }
+                                            )
+                                            GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                        }
+                                    }
+                                }
+
+                                // 4. ARTISTS
                                 if (uiState.searchArtists.isNotEmpty()) {
                                     item {
                                         Text(
@@ -243,6 +374,8 @@ fun SearchScreen(
                                         Spacer(Modifier.height(14.dp))
                                     }
                                 }
+
+                                // 5. ALBUMS
                                 if (uiState.searchAlbums.isNotEmpty()) {
                                     item {
                                         Text(
@@ -269,7 +402,7 @@ fun SearchScreen(
                             }
                         }
                     }
-                    1 -> { // Songs
+                    1 -> { // Songs Tab
                         if (uiState.searchResults.isEmpty()) {
                             EmptySearchResults(query = query)
                         } else {
@@ -277,6 +410,23 @@ fun SearchScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(bottom = 80.dp)
                             ) {
+                                uiState.searchTopMatch?.let { topSong ->
+                                    item {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            TopMatchHeroCard(
+                                                song = topSong,
+                                                isPlaying = playback.currentSong?.id == topSong.id && playback.isPlaying,
+                                                isFavorite = topSong.id in uiState.favoriteSongIds,
+                                                onPlayClick = {
+                                                    viewModel.playSong(topSong)
+                                                    navController.navigate(Screen.NowPlaying.route)
+                                                },
+                                                onFavoriteClick = { viewModel.toggleFavorite(topSong.id) },
+                                                onQueueClick = { viewModel.addToQueue(topSong) }
+                                            )
+                                        }
+                                    }
+                                }
                                 items(uiState.searchResults, key = { it.id }) { song ->
                                     SongListItem(
                                         song = song,
@@ -293,7 +443,35 @@ fun SearchScreen(
                             }
                         }
                     }
-                    2 -> { // Artists
+                    2 -> { // Soundtracks Tab
+                        val soundtracks = uiState.searchSoundtracks.ifEmpty {
+                            listOfNotNull(uiState.searchMovieSoundtrack)
+                        }
+                        if (soundtracks.isEmpty()) {
+                            EmptySearchResults(query = "Soundtracks for \"$query\"")
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(soundtracks, key = { it.movieName }) { st ->
+                                    SoundtrackCard(
+                                        soundtrack = st,
+                                        onPlaySoundtrack = {
+                                            viewModel.playSongs(st.tracks, 0)
+                                            navController.navigate(Screen.NowPlaying.route)
+                                        },
+                                        onSongClick = { song ->
+                                            viewModel.playSong(song)
+                                            navController.navigate(Screen.NowPlaying.route)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    3 -> { // Artists Tab
                         if (uiState.searchArtists.isEmpty()) {
                             EmptySearchResults(query = query)
                         } else {
@@ -312,7 +490,7 @@ fun SearchScreen(
                             }
                         }
                     }
-                    3 -> { // Albums
+                    4 -> { // Albums Tab
                         if (uiState.searchAlbums.isEmpty()) {
                             EmptySearchResults(query = query)
                         } else {
@@ -338,6 +516,126 @@ fun SearchScreen(
 }
 
 @Composable
+fun SoundtrackCard(
+    soundtrack: MovieSoundtrack,
+    onPlaySoundtrack: () -> Unit,
+    onSongClick: (Song) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = BgCard),
+        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AlbumArtImage(
+                    uri = soundtrack.albumArtUri,
+                    modifier = Modifier.size(68.dp),
+                    cornerRadius = 10.dp
+                )
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = GoldPrimary.copy(alpha = 0.15f),
+                        border = BorderStroke(0.5.dp, GoldPrimary.copy(alpha = 0.6f))
+                    ) {
+                        Text(
+                            text = "MOVIE SOUNDTRACK",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GoldPrimary
+                            ),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = soundtrack.movieName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${soundtrack.composer} • ${soundtrack.tracks.size} tracks",
+                        style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = onPlaySoundtrack) {
+                    Surface(
+                        shape = CircleShape,
+                        color = GoldPrimary,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = "Play Album",
+                            tint = BgBlack,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            GoldDivider()
+
+            // Preview tracks list
+            soundtrack.tracks.take(4).forEachIndexed { index, track ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSongClick(track) }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${index + 1}",
+                        style = MaterialTheme.typography.labelSmall.copy(color = GoldPrimary),
+                        modifier = Modifier.width(24.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = track.artist,
+                            style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (track.isPreview) {
+                        WebPreviewBadge()
+                    } else if (track.isOnline) {
+                        FullTrackBadge()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun EmptySearchResults(query: String) {
     Box(
         modifier = Modifier
@@ -350,7 +648,7 @@ fun EmptySearchResults(query: String) {
             Spacer(Modifier.height(14.dp))
             Text("No results for \"$query\"", style = MaterialTheme.typography.titleMedium.copy(color = TextPrimary))
             Spacer(Modifier.height(6.dp))
-            Text("Try searching for another song title, artist, or album", style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary))
+            Text("Try searching for another song title, movie, artist, or album", style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary))
         }
     }
 }

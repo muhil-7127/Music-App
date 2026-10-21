@@ -13,7 +13,8 @@ data class UserPreferenceProfile(
     val recentSongIds: List<Long> = emptyList(),
     val skippedSongIds: Set<Long> = emptySet(),
     val playCounts: Map<Long, Int> = emptyMap(),
-    val preferredGenres: Set<String> = emptySet()
+    val preferredGenres: Set<String> = emptySet(),
+    val preferredLanguage: String = "Tamil"
 )
 
 /**
@@ -181,6 +182,10 @@ class MusicRecommendationEngine @Inject constructor() {
         if (isSeedTamil && isCandidateTamil) {
             score += SCORE_LANGUAGE_AFFINITY
             reasons.add("Tamil Music Affinity")
+        }
+        if (profile.preferredLanguage.equals("Tamil", ignoreCase = true) && isCandidateTamil) {
+            score += 25.0
+            reasons.add("Preferred Language Bonus (Tamil)")
         }
 
         val isSeedBollywood = hasBollywoodAffinity(seed)

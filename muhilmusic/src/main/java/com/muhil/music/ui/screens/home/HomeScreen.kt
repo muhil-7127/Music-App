@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.muhil.music.domain.model.Song
+import com.muhil.music.domain.search.MovieSoundtrack
 import com.muhil.music.ui.components.*
 import com.muhil.music.ui.navigation.Screen
 import com.muhil.music.ui.theme.*
@@ -38,13 +39,13 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
 
-    // Permission launcher for secondary local MP3 feature
+    // Permission launcher for local MP3 feature
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> viewModel.loadLocalLibrary(granted) }
 
     val genres = remember {
-        listOf("All", "Pop", "Rock", "Hip-Hop", "R&B", "Electronic", "Tamil", "Bollywood", "Classical", "Indie")
+        listOf("All", "Tamil", "Pop", "Rock", "Hip-Hop", "R&B", "Melody", "Electronic", "Classical", "Indie")
     }
 
     Scaffold(
@@ -56,14 +57,24 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                // 1. Header with greeting and Muhil Logo
+                // 1. Header with greeting, Muhil logo, and language selector
                 item {
                     HomeHeader(
+                        currentLanguage = uiState.preferredLanguage,
+                        onLanguageSelected = { lang -> viewModel.setPreferredLanguage(lang) },
                         onSettingsClick = { navController.navigate(Screen.Settings.route) }
                     )
                 }
 
-                // 2. Current-song mini controller near top of screen (as requested)
+                // 2. Prominent Search Bar
+                item {
+                    ProminentSearchBar(
+                        onClick = { navController.navigate(Screen.Search.route) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+
+                // 3. Mini-Player bar near top if a song is currently active
                 if (playbackState.currentSong != null) {
                     item {
                         MiniNowPlayingBar(
@@ -77,7 +88,7 @@ fun HomeScreen(
                     }
                 }
 
-                // 3. Quick Navigation Chips (Library, Playlists, Favorites, Local)
+                // 4. Quick Navigation Chips (Favorites, Playlists, Albums, Artists, Local MP3s)
                 item {
                     HomeQuickNavRow(
                         navController = navController,
@@ -90,18 +101,10 @@ fun HomeScreen(
                     )
                 }
 
-                // 4. Genre Filter Discovery Chips
+                // 5. Genre Filter Discovery Chips
                 item {
-                    Text(
-                        text = "Explore Genres",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        ),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
                     LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(genres) { genre ->
@@ -123,10 +126,9 @@ fun HomeScreen(
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
                 }
 
-                // 5. Genre-Specific Songs (when a specific genre is selected)
+                // 6. Genre-Specific Songs (when a specific genre is selected)
                 if (uiState.selectedGenre != "All" && uiState.genreSongs.isNotEmpty()) {
                     item {
                         SectionHeader("${uiState.selectedGenre} Hits") {}
@@ -150,16 +152,175 @@ fun HomeScreen(
                     }
                 }
 
-                // 6. Featured Web Songs (Primary Online Discovery)
+                // 7. TAMIL-FIRST DISCOVERY SECTIONS (Displayed prominently for Tamil listeners)
+                if (uiState.preferredLanguage == "Tamil" || uiState.preferredLanguage == "All") {
+                    // 7a. Tamil Hits
+                    if (uiState.tamilHits.isNotEmpty()) {
+                        item {
+                            SectionHeader("🔥 Tamil Hits 2024") {
+                                viewModel.search("Tamil Hits")
+                                navController.navigate(Screen.Search.route)
+                            }
+                        }
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(uiState.tamilHits, key = { it.id }) { song ->
+                                    FeaturedSongCard(
+                                        song = song,
+                                        isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                        onClick = {
+                                            viewModel.playSong(song)
+                                            navController.navigate(Screen.NowPlaying.route)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 7b. Tamil Movie Soundtracks
+                    if (uiState.tamilSoundtracks.isNotEmpty()) {
+                        item {
+                            SectionHeader("🎬 Tamil Movie Soundtracks") {
+                                viewModel.search("Tamil Soundtracks")
+                                navController.navigate(Screen.Search.route)
+                            }
+                        }
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(uiState.tamilSoundtracks, key = { it.movieName }) { soundtrack ->
+                                    SoundtrackMiniCard(
+                                        soundtrack = soundtrack,
+                                        onClick = {
+                                            viewModel.playSongs(soundtrack.tracks, 0)
+                                            navController.navigate(Screen.NowPlaying.route)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 7c. Tamil Melodies & Love Songs
+                    if (uiState.tamilMelodies.isNotEmpty()) {
+                        item {
+                            SectionHeader("💖 Tamil Melodies & Love Songs") {
+                                viewModel.search("Tamil Melody")
+                                navController.navigate(Screen.Search.route)
+                            }
+                        }
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(uiState.tamilMelodies, key = { it.id }) { song ->
+                                    FeaturedSongCard(
+                                        song = song,
+                                        isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                        onClick = {
+                                            viewModel.playSong(song)
+                                            navController.navigate(Screen.NowPlaying.route)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 7d. Top Tamil Composers
+                    if (uiState.tamilArtists.isNotEmpty()) {
+                        item {
+                            SectionHeader("🎵 Top Tamil Composers & Singers") {}
+                        }
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(uiState.tamilArtists, key = { it.id }) { artist ->
+                                    ArtistCircleCard(
+                                        artist = artist,
+                                        onClick = {
+                                            viewModel.search(artist.name)
+                                            navController.navigate(Screen.Search.route)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 7e. Evergreen Tamil Classics
+                    if (uiState.tamilClassics.isNotEmpty()) {
+                        item {
+                            SectionHeader("✨ Evergreen Tamil Classics") {
+                                viewModel.search("Tamil Classics")
+                                navController.navigate(Screen.Search.route)
+                            }
+                        }
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(uiState.tamilClassics, key = { it.id }) { song ->
+                                    FeaturedSongCard(
+                                        song = song,
+                                        isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                        onClick = {
+                                            viewModel.playSong(song)
+                                            navController.navigate(Screen.NowPlaying.route)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 8. ADAPTIVE PERSONALIZED RECOMMENDATIONS ("Similar Vibes" / "Made For You")
+                if (uiState.recommendations.isNotEmpty()) {
+                    val seedTitle = uiState.recommendationSeed?.title
+                    val recHeading = if (!seedTitle.isNullOrBlank()) "Similar Vibes • Because of $seedTitle" else "Made For You • Recommendations"
+                    item {
+                        SectionHeader(recHeading) {}
+                    }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(uiState.recommendations, key = { it.id }) { recSong ->
+                                FeaturedSongCard(
+                                    song = recSong,
+                                    isPlaying = playbackState.currentSong?.id == recSong.id && playbackState.isPlaying,
+                                    onClick = {
+                                        viewModel.playSong(recSong)
+                                        navController.navigate(Screen.NowPlaying.route)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 9. Featured Global Web Tracks
                 item {
-                    SectionHeader("Featured Web Tracks") {
+                    SectionHeader("Featured Global Tracks") {
                         navController.navigate(Screen.Search.route)
                     }
                 }
 
-                if (uiState.isLoading && uiState.featuredSongs.isEmpty()) {
+                if (uiState.isLoading && uiState.featuredSongs.isEmpty() && uiState.tamilHits.isEmpty()) {
                     item { HomeLoadingSkeleton() }
-                } else if (uiState.error != null && uiState.featuredSongs.isEmpty()) {
+                } else if (uiState.error != null && uiState.featuredSongs.isEmpty() && uiState.tamilHits.isEmpty()) {
                     item {
                         HomeErrorBanner(
                             message = uiState.error ?: "Unable to load online tracks. Check network.",
@@ -186,36 +347,10 @@ fun HomeScreen(
                     }
                 }
 
-                // 6b. Intelligent Similar-Song Recommendations ("Similar Vibes" / "Made For You")
-                if (uiState.recommendations.isNotEmpty()) {
-                    val seedTitle = uiState.recommendationSeed?.title
-                    val recHeading = if (!seedTitle.isNullOrBlank()) "Similar Vibes • Because of $seedTitle" else "Made For You"
-                    item {
-                        SectionHeader(recHeading) {}
-                    }
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            items(uiState.recommendations, key = { it.id }) { recSong ->
-                                FeaturedSongCard(
-                                    song = recSong,
-                                    isPlaying = playbackState.currentSong?.id == recSong.id && playbackState.isPlaying,
-                                    onClick = {
-                                        viewModel.playSong(recSong)
-                                        navController.navigate(Screen.NowPlaying.route)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 7. Popular Artists
+                // 10. Popular Artists
                 if (uiState.topArtists.isNotEmpty()) {
                     item {
-                        SectionHeader("Popular Artists") {}
+                        SectionHeader("Global Artists") {}
                     }
                     item {
                         LazyRow(
@@ -235,7 +370,7 @@ fun HomeScreen(
                     }
                 }
 
-                // 8. Trending Albums
+                // 11. Trending Albums
                 if (uiState.trendingAlbums.isNotEmpty()) {
                     item {
                         SectionHeader("Trending Albums") {}
@@ -258,7 +393,7 @@ fun HomeScreen(
                     }
                 }
 
-                // 9. Recently Played
+                // 12. Recently Played
                 if (uiState.recentlyPlayed.isNotEmpty()) {
                     item {
                         SectionHeader("Recently Played") { navController.navigate(Screen.RecentPlay.route) }
@@ -283,7 +418,7 @@ fun HomeScreen(
                     }
                 }
 
-                // 10. Favorites
+                // 13. Favorites
                 if (uiState.favoriteSongs.isNotEmpty()) {
                     item {
                         SectionHeader("Favorites") { navController.navigate(Screen.Favorites.route) }
@@ -308,7 +443,7 @@ fun HomeScreen(
                     }
                 }
 
-                // 11. Local Device Audio Banner (Secondary Feature)
+                // 14. Local Device Audio Banner (Secondary Feature)
                 item {
                     Spacer(Modifier.height(16.dp))
                     Surface(
@@ -359,7 +494,7 @@ fun HomeScreen(
                 }
             }
 
-            // 12. Floating Search Bar near bottom of screen (as requested)
+            // Floating Search Button near bottom
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -372,7 +507,42 @@ fun HomeScreen(
 }
 
 @Composable
-fun HomeHeader(onSettingsClick: () -> Unit) {
+fun ProminentSearchBar(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = BgCard,
+        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.45f)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.Search, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "Search song, Tamil movie (Leo, Jailer), artist...",
+                style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun HomeHeader(
+    currentLanguage: String,
+    onLanguageSelected: (String) -> Unit,
+    onSettingsClick: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val languages = listOf("Tamil", "English", "Hindi", "All")
+
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when {
@@ -381,6 +551,7 @@ fun HomeHeader(onSettingsClick: () -> Unit) {
             else -> "Good Evening"
         }
     }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -410,9 +581,118 @@ fun HomeHeader(onSettingsClick: () -> Unit) {
                 )
                 Text(greeting, style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
             }
+
+            // Language Selector Pill with Dropdown
+            Box {
+                Surface(
+                    onClick = { expanded = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = BgCard,
+                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🌐 $currentLanguage ▾",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = GoldPrimary
+                            )
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.background(BgCard)
+                ) {
+                    languages.forEach { lang ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (lang == "Tamil") "Tamil (தமிழ்)" else lang,
+                                    color = if (lang == currentLanguage) GoldPrimary else TextPrimary,
+                                    fontWeight = if (lang == currentLanguage) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            onClick = {
+                                onLanguageSelected(lang)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
             IconButton(onClick = onSettingsClick) {
                 Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = SilverLight)
             }
+        }
+    }
+}
+
+@Composable
+fun SoundtrackMiniCard(
+    soundtrack: MovieSoundtrack,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .width(160.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = BgCard),
+        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.35f))
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(BgBlack),
+                contentAlignment = Alignment.Center
+            ) {
+                AlbumArtImage(
+                    uri = soundtrack.albumArtUri,
+                    modifier = Modifier.fillMaxSize(),
+                    cornerRadius = 12.dp
+                )
+                // Overlay play icon
+                Surface(
+                    shape = CircleShape,
+                    color = GoldPrimary.copy(alpha = 0.9f),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = "Play Album",
+                        tint = BgBlack,
+                        modifier = Modifier.padding(6.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = soundtrack.movieName,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${soundtrack.tracks.size} Songs • ${soundtrack.composer}",
+                style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -526,7 +806,7 @@ fun FloatingSearchBar(onClick: () -> Unit) {
             Icon(Icons.Rounded.Search, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
             Text(
-                "Search web songs, artists, albums...",
+                "Search web songs, Tamil movies, artists...",
                 style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary)
             )
         }

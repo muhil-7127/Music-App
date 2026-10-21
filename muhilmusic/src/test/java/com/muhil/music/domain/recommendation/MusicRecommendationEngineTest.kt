@@ -199,4 +199,20 @@ class MusicRecommendationEngineTest {
         assertEquals(1, recommendations.size)
         assertEquals(candidateValid.id, recommendations[0].id)
     }
+
+    @Test
+    fun userBehavior_preferredLanguageBoostsMatchingSongs() {
+        val seed = createSong(1, "Shape of You", "Ed Sheeran", "Divide", "Pop")
+        val candidateTamil = createSong(2, "Kolaveri", "Dhanush", "3", "Tamil")
+        val candidateEnglish = createSong(3, "Galway Girl", "Ed Sheeran", "Divide", "Pop")
+
+        val profileTamil = UserPreferenceProfile(preferredLanguage = "Tamil")
+        val profileEnglish = UserPreferenceProfile(preferredLanguage = "English")
+
+        val scoreTamilWithTamilPref = engine.scoreCandidate(seed, candidateTamil, profileTamil)
+        val scoreTamilWithEnglishPref = engine.scoreCandidate(seed, candidateTamil, profileEnglish)
+
+        assertTrue(scoreTamilWithTamilPref.score > scoreTamilWithEnglishPref.score)
+        assertTrue(scoreTamilWithTamilPref.reasons.contains("Preferred Language Match (Tamil)"))
+    }
 }

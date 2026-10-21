@@ -2,6 +2,7 @@ package com.muhil.music.data.repository
 
 import com.muhil.music.data.local.dao.*
 import com.muhil.music.data.local.entity.*
+import com.muhil.music.data.local.preferences.UserPreferencesManager
 import com.muhil.music.data.mediastore.MediaStoreDataSource
 import com.muhil.music.data.remote.AudiusMusicDataSource
 import com.muhil.music.data.remote.OnlineLyricsDataSource
@@ -9,6 +10,9 @@ import com.muhil.music.data.remote.OnlineMusicDataSource
 import com.muhil.music.domain.model.*
 import com.muhil.music.domain.recommendation.MusicRecommendationEngine
 import com.muhil.music.domain.recommendation.UserPreferenceProfile
+import com.muhil.music.domain.search.MusicSearchRanker
+import com.muhil.music.domain.search.QueryIntent
+import com.muhil.music.domain.search.RankedSearchResult
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +33,9 @@ class MusicRepository @Inject constructor(
     private val recentlyPlayedDao: RecentlyPlayedDao,
     private val playlistDao: PlaylistDao,
     private val lyricsDao: LyricsDao,
-    private val recommendationEngine: MusicRecommendationEngine
+    private val recommendationEngine: MusicRecommendationEngine,
+    private val searchRanker: MusicSearchRanker,
+    val userPreferencesManager: UserPreferencesManager
 ) {
 
     // ==========================================
@@ -47,7 +53,13 @@ class MusicRepository @Inject constructor(
     private val searchSongsCache = ConcurrentHashMap<String, CacheEntry<List<Song>>>()
     private val searchArtistsCache = ConcurrentHashMap<String, CacheEntry<List<Artist>>>()
     private val searchAlbumsCache = ConcurrentHashMap<String, CacheEntry<List<Album>>>()
+    private val searchRankedCache = ConcurrentHashMap<String, CacheEntry<RankedSearchResult>>()
     private val recommendationsCache = ConcurrentHashMap<Long, CacheEntry<List<Song>>>()
+
+    private var tamilHitsCache: CacheEntry<List<Song>>? = null
+    private var tamilSoundtracksCache: CacheEntry<List<Album>>? = null
+    private var tamilClassicsCache: CacheEntry<List<Song>>? = null
+    private var tamilMelodiesCache: CacheEntry<List<Song>>? = null
 
     private val ttlFeaturedMs = 10 * 60 * 1000L // 10 minutes
     private val ttlGenreMs = 10 * 60 * 1000L
@@ -130,94 +142,199 @@ class MusicRepository @Inject constructor(
         combined
     }
 
-    suspend fun searchOnlineSongs(query: String): List<Song> = coroutineScope {
-        val cleanQuery = query.trim().lowercase()
-        if (cleanQuery.isBlank()) return@coroutineScope emptyList()
-
-        searchSongsCache[cleanQuery]?.let { if (it.isValid(ttlSearchMs)) return@coroutineScope it.data }
-
-        val audiusDeferred = async { audiusMusic.searchSongs(query, limit = 30) }
-        val itunesDeferred = async { onlineMusic.searchSongs(query, limit = 30) }
-
-        val audiusTracks = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
-        val itunesTracks = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
-
-        val seen = mutableSetOf<String>()
-        val combined = mutableListOf<Song>()
-
-        for (song in audiusTracks) {
-            val key = normalizeKey(song.title, song.artist)
-            if (seen.add(key)) combined.add(song)
-        }
-        for (song in itunesTracks) {
-            val key = normalizeKey(song.title, song.artist)
-            if (seen.add(key)) combined.add(song)
+    /**
+     * Precision search ranking: fetches candidate pool across Audius, iTunes (IN store),
+     * and local music, then ranks using MusicSearchRanker.
+     */
+    suspend fun searchOnlineRanked(
+        query: String,
+        preferredLanguage: String = "Tamil"
+    ): RankedSearchResult = coroutineScope {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) {
+            return@coroutineScope RankedSearchResult(
+                topMatch = null,
+                movieSoundtrack = null,
+                songs = emptyList(),
+                artists = emptyList(),
+                albums = emptyList(),
+                detectedIntent = QueryIntent.GENERAL
+            )
         }
 
-        if (combined.isNotEmpty()) {
-            searchSongsCache[cleanQuery] = CacheEntry(combined)
+        val cacheKey = "${cleanQuery.lowercase()}_$preferredLanguage"
+        searchRankedCache[cacheKey]?.let {
+            if (it.isValid(ttlSearchMs)) return@coroutineScope it.data
         }
-        combined
+
+        val transliterated = searchRanker.transliterateTamil(cleanQuery)
+        val hasTransliteration = transliterated != cleanQuery
+
+        // Parallel queries to Audius and iTunes
+        val audiusSongsDef = async { audiusMusic.searchSongs(cleanQuery, limit = 30) }
+        val itunesSongsDef = async { onlineMusic.searchSongs(cleanQuery, limit = 30, country = "IN") }
+        val transliteratedItunesDef = if (hasTransliteration) {
+            async { onlineMusic.searchSongs(transliterated, limit = 25, country = "IN") }
+        } else null
+
+        val audiusArtistsDef = async { audiusMusic.searchArtists(cleanQuery, limit = 15) }
+        val itunesArtistsDef = async { onlineMusic.searchArtists(cleanQuery, limit = 15, country = "IN") }
+
+        val audiusAlbumsDef = async { audiusMusic.searchPlaylists(cleanQuery, limit = 15) }
+        val itunesAlbumsDef = async { onlineMusic.searchAlbums(cleanQuery, limit = 15, country = "IN") }
+
+        val localSongsDef = async { try { mediaStore.searchSongs(cleanQuery) } catch (_: Exception) { emptyList() } }
+
+        val rawSongs = mutableListOf<Song>()
+        rawSongs.addAll(try { audiusSongsDef.await() } catch (_: Exception) { emptyList() })
+        rawSongs.addAll(try { itunesSongsDef.await() } catch (_: Exception) { emptyList() })
+        if (transliteratedItunesDef != null) {
+            rawSongs.addAll(try { transliteratedItunesDef.await() } catch (_: Exception) { emptyList() })
+        }
+        rawSongs.addAll(try { localSongsDef.await() } catch (_: Exception) { emptyList() })
+
+        val rawArtists = mutableListOf<Artist>()
+        rawArtists.addAll(try { audiusArtistsDef.await() } catch (_: Exception) { emptyList() })
+        rawArtists.addAll(try { itunesArtistsDef.await() } catch (_: Exception) { emptyList() })
+
+        val rawAlbums = mutableListOf<Album>()
+        rawAlbums.addAll(try { audiusAlbumsDef.await() } catch (_: Exception) { emptyList() })
+        rawAlbums.addAll(try { itunesAlbumsDef.await() } catch (_: Exception) { emptyList() })
+
+        val favIds = try { favoriteDao.getAllFavorites().first().map { it.songId }.toSet() } catch (_: Exception) { emptySet() }
+        val songsWithFav = rawSongs.map { if (it.id in favIds) it.copy(isFavorite = true) else it }
+
+        val ranked = searchRanker.rankSearchResults(
+            query = cleanQuery,
+            candidates = songsWithFav,
+            artists = rawArtists,
+            albums = rawAlbums,
+            preferredLanguage = preferredLanguage
+        )
+
+        searchRankedCache[cacheKey] = CacheEntry(ranked)
+        ranked
     }
 
-    suspend fun searchOnlineArtists(query: String): List<Artist> = coroutineScope {
-        val cleanQuery = query.trim().lowercase()
-        if (cleanQuery.isBlank()) return@coroutineScope emptyList()
-
-        searchArtistsCache[cleanQuery]?.let { if (it.isValid(ttlSearchMs)) return@coroutineScope it.data }
-
-        val audiusDeferred = async { audiusMusic.searchArtists(query, limit = 15) }
-        val itunesDeferred = async { onlineMusic.searchArtists(query, limit = 15) }
-
-        val audiusArtists = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
-        val itunesArtists = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
-
-        val seen = mutableSetOf<String>()
-        val combined = mutableListOf<Artist>()
-
-        for (artist in audiusArtists) {
-            val key = artist.name.trim().lowercase()
-            if (seen.add(key)) combined.add(artist)
-        }
-        for (artist in itunesArtists) {
-            val key = artist.name.trim().lowercase()
-            if (seen.add(key)) combined.add(artist)
-        }
-
-        if (combined.isNotEmpty()) {
-            searchArtistsCache[cleanQuery] = CacheEntry(combined)
-        }
-        combined
+    suspend fun searchOnlineSongs(query: String): List<Song> {
+        return searchOnlineRanked(query).songs
     }
 
-    suspend fun searchOnlineAlbums(query: String): List<Album> = coroutineScope {
-        val cleanQuery = query.trim().lowercase()
-        if (cleanQuery.isBlank()) return@coroutineScope emptyList()
+    suspend fun searchOnlineArtists(query: String): List<Artist> {
+        return searchOnlineRanked(query).artists
+    }
 
-        searchAlbumsCache[cleanQuery]?.let { if (it.isValid(ttlSearchMs)) return@coroutineScope it.data }
+    suspend fun searchOnlineAlbums(query: String): List<Album> {
+        return searchOnlineRanked(query).albums
+    }
 
-        val audiusDeferred = async { audiusMusic.searchPlaylists(query, limit = 15) }
-        val itunesDeferred = async { onlineMusic.searchAlbums(query, limit = 15) }
+    // ==========================================
+    // Tamil-First Music Discovery
+    // ==========================================
 
-        val audiusPlaylists = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
-        val itunesAlbums = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
+    suspend fun getTamilHits(forceRefresh: Boolean = false): List<Song> = coroutineScope {
+        if (!forceRefresh) {
+            tamilHitsCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
+        }
+        val queries = listOf("Tamil Hits 2024", "Anirudh Ravichander", "A.R. Rahman Tamil", "Hukum Jailer")
+        val deferreds = queries.map { q -> async { onlineMusic.searchSongs(q, limit = 12, country = "IN") } }
+        val audiusDef = async { audiusMusic.searchSongs("Tamil", limit = 10) }
 
+        val all = mutableListOf<Song>()
         val seen = mutableSetOf<String>()
-        val combined = mutableListOf<Album>()
+        for (d in deferreds) {
+            val list = try { d.await() } catch (_: Exception) { emptyList() }
+            for (s in list) {
+                val key = normalizeKey(s.title, s.artist)
+                if (seen.add(key)) all.add(s)
+            }
+        }
+        val audiusList = try { audiusDef.await() } catch (_: Exception) { emptyList() }
+        for (s in audiusList) {
+            val key = normalizeKey(s.title, s.artist)
+            if (seen.add(key)) all.add(s)
+        }
 
-        for (album in audiusPlaylists) {
-            val key = album.title.trim().lowercase()
-            if (seen.add(key)) combined.add(album)
+        if (all.isNotEmpty()) {
+            tamilHitsCache = CacheEntry(all)
         }
-        for (album in itunesAlbums) {
-            val key = album.title.trim().lowercase()
-            if (seen.add(key)) combined.add(album)
-        }
+        all
+    }
 
-        if (combined.isNotEmpty()) {
-            searchAlbumsCache[cleanQuery] = CacheEntry(combined)
+    suspend fun getTamilSoundtracks(forceRefresh: Boolean = false): List<Album> = coroutineScope {
+        if (!forceRefresh) {
+            tamilSoundtracksCache?.let { if (it.isValid(ttlMetaMs)) return@coroutineScope it.data }
         }
-        combined
+        val queries = listOf("Leo Soundtrack", "Vikram Soundtrack", "Jailer Soundtrack", "Ponniyin Selvan", "Master Tamil")
+        val deferreds = queries.map { q -> async { onlineMusic.searchAlbums(q, limit = 5, country = "IN") } }
+        val all = mutableListOf<Album>()
+        val seen = mutableSetOf<String>()
+        for (d in deferreds) {
+            val list = try { d.await() } catch (_: Exception) { emptyList() }
+            for (a in list) {
+                val key = a.title.trim().lowercase()
+                if (seen.add(key)) all.add(a)
+            }
+        }
+        if (all.isNotEmpty()) {
+            tamilSoundtracksCache = CacheEntry(all)
+        }
+        all
+    }
+
+    suspend fun getTamilClassics(forceRefresh: Boolean = false): List<Song> = coroutineScope {
+        if (!forceRefresh) {
+            tamilClassicsCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
+        }
+        val queries = listOf("Ilaiyaraaja Tamil Classics", "SPB Tamil Hits", "A.R. Rahman 90s Tamil")
+        val deferreds = queries.map { q -> async { onlineMusic.searchSongs(q, limit = 10, country = "IN") } }
+        val all = mutableListOf<Song>()
+        val seen = mutableSetOf<String>()
+        for (d in deferreds) {
+            val list = try { d.await() } catch (_: Exception) { emptyList() }
+            for (s in list) {
+                val key = normalizeKey(s.title, s.artist)
+                if (seen.add(key)) all.add(s)
+            }
+        }
+        if (all.isNotEmpty()) {
+            tamilClassicsCache = CacheEntry(all)
+        }
+        all
+    }
+
+    suspend fun getTamilMelodies(forceRefresh: Boolean = false): List<Song> = coroutineScope {
+        if (!forceRefresh) {
+            tamilMelodiesCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
+        }
+        val queries = listOf("Tamil Melody Hits", "Sid Sriram Tamil", "Harris Jayaraj Melodies")
+        val deferreds = queries.map { q -> async { onlineMusic.searchSongs(q, limit = 10, country = "IN") } }
+        val all = mutableListOf<Song>()
+        val seen = mutableSetOf<String>()
+        for (d in deferreds) {
+            val list = try { d.await() } catch (_: Exception) { emptyList() }
+            for (s in list) {
+                val key = normalizeKey(s.title, s.artist)
+                if (seen.add(key)) all.add(s)
+            }
+        }
+        if (all.isNotEmpty()) {
+            tamilMelodiesCache = CacheEntry(all)
+        }
+        all
+    }
+
+    fun getTamilArtists(): List<Artist> {
+        return listOf(
+            Artist(id = 543888365L, name = "Anirudh Ravichander", songCount = 85, albumCount = 20, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/d1/aa/22/d1aa223d-249d-6490-25fc-8ea736dd6313/190296767357.jpg/600x600bb.jpg", isOnline = true),
+            Artist(id = 49669528L, name = "A.R. Rahman", songCount = 120, albumCount = 45, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c9/a1/38/c9a13809-53e7-2b36-efd3-90d56569165b/886443685608.jpg/600x600bb.jpg", isOnline = true),
+            Artist(id = 265693527L, name = "Yuvan Shankar Raja", songCount = 95, albumCount = 30, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/aa/62/1f/aa621fa7-69b7-b08e-8971-419b16c529cb/8903431614749_cover.jpg/600x600bb.jpg", isOnline = true),
+            Artist(id = 49669542L, name = "Harris Jayaraj", songCount = 70, albumCount = 22, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/36/53/7c/36537c35-26a9-8356-9a57-1d37a54a7c06/8902894356070_cover.jpg/600x600bb.jpg", isOnline = true),
+            Artist(id = 5271810L, name = "Ilaiyaraaja", songCount = 350, albumCount = 90, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/d2/e6/bd/d2e6bd76-a0e2-658f-2877-3e1eeef94759/8902894359415_cover.jpg/600x600bb.jpg", isOnline = true),
+            Artist(id = 907085775L, name = "Sid Sriram", songCount = 60, albumCount = 15, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/64/97/8f/64978ffc-1845-eec8-5be4-f5dc81df3e73/8902894359040_cover.jpg/600x600bb.jpg", isOnline = true),
+            Artist(id = 49669530L, name = "Santhosh Narayanan", songCount = 55, albumCount = 18, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/7e/68/78/7e6878b2-540d-2b7e-9730-109ce4a34b3e/8903431623888_cover.jpg/600x600bb.jpg", isOnline = true),
+            Artist(id = 5262706L, name = "S.P. Balasubrahmanyam", songCount = 500, albumCount = 120, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/55/aa/76/55aa7632-4752-ce2a-e6ae-f14d9b23adcb/8902894358890_cover.jpg/600x600bb.jpg", isOnline = true)
+        )
     }
 
     suspend fun getTopArtists(forceRefresh: Boolean = false): List<Artist> = coroutineScope {
@@ -273,12 +390,22 @@ class MusicRepository @Inject constructor(
         // 2. Fetch User Preference Profile
         val favSongs = try { favoriteDao.getAllFavorites().first() } catch (e: Exception) { emptyList() }
         val recentSongs = try { recentlyPlayedDao.getRecentlyPlayed().first() } catch (e: Exception) { emptyList() }
+        val skippedSongs = try { userPreferencesManager.skippedSongIds.first() } catch (_: Exception) { emptySet() }
+        val customPlayCounts = try { userPreferencesManager.playCounts.first() } catch (_: Exception) { emptyMap() }
+        val prefLang = try { userPreferencesManager.preferredLanguage.first() } catch (_: Exception) { "Tamil" }
+
+        val recentCounts = recentSongs.groupingBy { it.songId }.eachCount()
+        val mergedPlayCounts = (recentCounts.keys + customPlayCounts.keys).associateWith {
+            (recentCounts[it] ?: 0) + (customPlayCounts[it] ?: 0)
+        }
 
         val userProfile = UserPreferenceProfile(
-            favoriteSongIds = favSongs.map { it.songId }.toSet(),
-            favoriteArtists = favSongs.map { it.artist.trim().lowercase() }.toSet(),
-            recentSongIds   = recentSongs.map { it.songId },
-            playCounts      = recentSongs.groupingBy { it.songId }.eachCount()
+            favoriteSongIds   = favSongs.map { it.songId }.toSet(),
+            favoriteArtists   = favSongs.map { it.artist.trim().lowercase() }.toSet(),
+            recentSongIds     = recentSongs.map { it.songId },
+            skippedSongIds    = skippedSongs,
+            playCounts        = mergedPlayCounts,
+            preferredLanguage = prefLang
         )
 
         // 3. Delegate to Recommendation Engine for scoring, diversity capping, and deduplication

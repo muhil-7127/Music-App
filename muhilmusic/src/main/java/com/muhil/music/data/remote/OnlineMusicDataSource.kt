@@ -27,10 +27,10 @@ class OnlineMusicDataSource @Inject constructor() {
     /**
      * Search songs by title, artist, or album on the web (iTunes Search API).
      */
-    suspend fun searchSongs(query: String, limit: Int = 40): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun searchSongs(query: String, limit: Int = 40, country: String = "IN"): List<Song> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-        val endpoint = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=$limit"
+        val endpoint = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=$limit&country=$country"
         try {
             val jsonStr = httpGet(endpoint) ?: return@withContext emptyList()
             parseSongs(jsonStr)
@@ -43,10 +43,10 @@ class OnlineMusicDataSource @Inject constructor() {
     /**
      * Search artists by name on the web.
      */
-    suspend fun searchArtists(query: String, limit: Int = 15): List<Artist> = withContext(Dispatchers.IO) {
+    suspend fun searchArtists(query: String, limit: Int = 15, country: String = "IN"): List<Artist> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-        val endpoint = "https://itunes.apple.com/search?term=$encoded&entity=musicArtist&limit=$limit"
+        val endpoint = "https://itunes.apple.com/search?term=$encoded&entity=musicArtist&limit=$limit&country=$country"
         try {
             val jsonStr = httpGet(endpoint) ?: return@withContext emptyList()
             parseArtists(jsonStr)
@@ -59,10 +59,10 @@ class OnlineMusicDataSource @Inject constructor() {
     /**
      * Search albums by name on the web.
      */
-    suspend fun searchAlbums(query: String, limit: Int = 20): List<Album> = withContext(Dispatchers.IO) {
+    suspend fun searchAlbums(query: String, limit: Int = 20, country: String = "IN"): List<Album> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-        val endpoint = "https://itunes.apple.com/search?term=$encoded&entity=album&limit=$limit"
+        val endpoint = "https://itunes.apple.com/search?term=$encoded&entity=album&limit=$limit&country=$country"
         try {
             val jsonStr = httpGet(endpoint) ?: return@withContext emptyList()
             parseAlbums(jsonStr)

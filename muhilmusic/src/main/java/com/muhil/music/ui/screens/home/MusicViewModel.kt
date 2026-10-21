@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.muhil.music.data.local.entity.RecentlyPlayedEntity
 import com.muhil.music.data.repository.MusicRepository
 import com.muhil.music.domain.model.*
+import com.muhil.music.domain.search.MovieSoundtrack
+import com.muhil.music.domain.search.QueryIntent
+import com.muhil.music.domain.search.RankedSearchResult
 import com.muhil.music.media.MuhilPlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -32,8 +35,19 @@ data class MusicUiState(
     val favoriteSongIds: Set<Long> = emptySet(),
     val favoriteSongs: List<Song> = emptyList(),
     val searchResults: List<Song> = emptyList(),
+    val searchTopMatch: Song? = null,
+    val searchMovieSoundtrack: MovieSoundtrack? = null,
+    val searchSoundtracks: List<MovieSoundtrack> = emptyList(),
+    val searchIntent: QueryIntent = QueryIntent.GENERAL,
     val searchArtists: List<Artist> = emptyList(),
     val searchAlbums: List<Album> = emptyList(),
+    val searchHistory: List<String> = emptyList(),
+    val preferredLanguage: String = "Tamil",
+    val tamilHits: List<Song> = emptyList(),
+    val tamilSoundtracks: List<MovieSoundtrack> = emptyList(),
+    val tamilClassics: List<Song> = emptyList(),
+    val tamilMelodies: List<Song> = emptyList(),
+    val tamilArtists: List<Artist> = emptyList(),
     val isSearching: Boolean = false,
     val searchError: String? = null,
     val isLoading: Boolean = false,
@@ -62,8 +76,22 @@ class MusicViewModel @Inject constructor(
     init {
         observeFavorites()
         observeRecentlyPlayed()
+        observePreferences()
         observePlaybackForRecommendations()
         loadHomeContent()
+    }
+
+    private fun observePreferences() {
+        viewModelScope.launch {
+            repository.preferredLanguage.collect { lang ->
+                _uiState.update { it.copy(preferredLanguage = lang) }
+            }
+        }
+        viewModelScope.launch {
+            repository.searchHistory.collect { history ->
+                _uiState.update { it.copy(searchHistory = history) }
+            }
+        }
     }
 
     private fun observeFavorites() {
@@ -101,7 +129,8 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
-     * Primary online music discovery: loads featured songs, top artists, and trending albums concurrently.
+     * Primary online music discovery: loads featured songs, top artists, trending albums,
+     * and Tamil-focused discovery categories concurrently.
      */
     fun loadHomeContent(forceRefresh: Boolean = false) {
         viewModelScope.launch {
@@ -111,24 +140,42 @@ class MusicViewModel @Inject constructor(
                     val featuredDef = async { repository.getFeaturedSongs(forceRefresh) }
                     val artistsDef = async { repository.getTopArtists(forceRefresh) }
                     val albumsDef = async { repository.getTrendingAlbums(forceRefresh) }
+                    val tamilHitsDef = async { repository.getTamilHits(forceRefresh) }
+                    val tamilSoundtracksDef = async { repository.getTamilSoundtracks(forceRefresh) }
+                    val tamilClassicsDef = async { repository.getTamilClassics(forceRefresh) }
+                    val tamilMelodiesDef = async { repository.getTamilMelodies(forceRefresh) }
+                    val tamilArtistsDef = async { repository.getTamilArtists(forceRefresh) }
 
                     val featured = featuredDef.await()
                     val artists = artistsDef.await()
                     val albums = albumsDef.await()
+                    val tamilHits = tamilHitsDef.await()
+                    val tamilSoundtracks = tamilSoundtracksDef.await()
+                    val tamilClassics = tamilClassicsDef.await()
+                    val tamilMelodies = tamilMelodiesDef.await()
+                    val tamilArtists = tamilArtistsDef.await()
 
                     _uiState.update {
                         it.copy(
                             featuredSongs = featured,
                             topArtists = artists,
                             trendingAlbums = albums,
+                            tamilHits = tamilHits,
+                            tamilSoundtracks = tamilSoundtracks,
+                            tamilClassics = tamilClassics,
+                            tamilMelodies = tamilMelodies,
+                            tamilArtists = tamilArtists,
                             isLoading = false,
-                            error = if (featured.isEmpty() && it.localSongs.isEmpty()) "Unable to reach music servers. Tap retry." else null
+                            error = if (featured.isEmpty() && it.localSongs.isEmpty() && tamilHits.isEmpty()) "Unable to reach music servers. Tap retry." else null
                         )
                     }
 
                     // Seed recommendations with top track if no seed exists yet
-                    if (_uiState.value.recommendationSeed == null && featured.isNotEmpty()) {
-                        loadRecommendations(featured.first())
+                    if (_uiState.value.recommendationSeed == null) {
+                        val seed = tamilHits.firstOrNull() ?: featured.firstOrNull()
+                        if (seed != null) {
+                            loadRecommendations(seed)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -136,7 +183,7 @@ class MusicViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = if (it.featuredSongs.isEmpty() && it.localSongs.isEmpty()) "Failed to load online music. Check connection." else null
+                        error = if (it.featuredSongs.isEmpty() && it.localSongs.isEmpty() && it.tamilHits.isEmpty()) "Failed to load online music. Check connection." else null
                     )
                 }
             }
@@ -185,7 +232,7 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
-     * Real-time web music search with debouncing, request cancellation, and parallel calls.
+     * Real-time music search with intent detection, exact-match ranking, and Tamil awareness.
      */
     fun search(query: String) {
         searchJob?.cancel()
@@ -193,6 +240,10 @@ class MusicViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     searchResults = emptyList(),
+                    searchTopMatch = null,
+                    searchMovieSoundtrack = null,
+                    searchSoundtracks = emptyList(),
+                    searchIntent = QueryIntent.GENERAL,
                     searchArtists = emptyList(),
                     searchAlbums = emptyList(),
                     isSearching = false,
@@ -205,19 +256,25 @@ class MusicViewModel @Inject constructor(
         searchJob = viewModelScope.launch {
             delay(300)
             _uiState.update { it.copy(isSearching = true, searchError = null) }
+            val trimmedQuery = query.trim()
+            repository.saveSearchQuery(trimmedQuery)
             try {
                 coroutineScope {
-                    val songsDef = async { repository.searchOnlineSongs(query) }
-                    val artistsDef = async { repository.searchOnlineArtists(query) }
-                    val albumsDef = async { repository.searchOnlineAlbums(query) }
+                    val rankedDef = async { repository.searchOnlineRanked(trimmedQuery, preferredLanguage = _uiState.value.preferredLanguage) }
+                    val artistsDef = async { repository.searchOnlineArtists(trimmedQuery) }
+                    val albumsDef = async { repository.searchOnlineAlbums(trimmedQuery) }
 
-                    val songs = songsDef.await()
+                    val ranked = rankedDef.await()
                     val artists = artistsDef.await()
                     val albums = albumsDef.await()
 
                     _uiState.update {
                         it.copy(
-                            searchResults = songs,
+                            searchResults = ranked.rankedSongs,
+                            searchTopMatch = ranked.topMatch,
+                            searchMovieSoundtrack = ranked.movieSoundtrack,
+                            searchSoundtracks = ranked.allSoundtracks,
+                            searchIntent = ranked.intent,
                             searchArtists = artists,
                             searchAlbums = albums,
                             isSearching = false,
@@ -326,4 +383,35 @@ class MusicViewModel @Inject constructor(
 
     fun getRecentlyAddedSongs(limit: Int = 10): List<Song> =
         _uiState.value.featuredSongs.take(limit)
+
+    fun setPreferredLanguage(lang: String) {
+        viewModelScope.launch {
+            repository.setPreferredLanguage(lang)
+            loadHomeContent(forceRefresh = true)
+        }
+    }
+
+    fun removeSearchHistoryItem(query: String) {
+        viewModelScope.launch {
+            repository.removeSearchQuery(query)
+        }
+    }
+
+    fun clearSearchHistory() {
+        viewModelScope.launch {
+            repository.clearSearchHistory()
+        }
+    }
+
+    fun recordSongSkipped(songId: Long) {
+        viewModelScope.launch {
+            repository.recordSongSkipped(songId)
+        }
+    }
+
+    fun recordSongPlayed(songId: Long) {
+        viewModelScope.launch {
+            repository.recordSongPlayed(songId)
+        }
+    }
 }
