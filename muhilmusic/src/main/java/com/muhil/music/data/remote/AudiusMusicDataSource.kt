@@ -192,9 +192,7 @@ class AudiusMusicDataSource @Inject constructor() {
 
             // Extract high-res artwork
             val artworkObj = item.optJSONObject("artwork")
-            val artUri = artworkObj?.optString("480x480", null)?.takeIf { it.isNotBlank() }
-                ?: artworkObj?.optString("1000x1000", null)?.takeIf { it.isNotBlank() }
-                ?: artworkObj?.optString("150x150", null)?.takeIf { it.isNotBlank() }
+            val artUri = optImage(artworkObj, "480x480", "1000x1000", "150x150")
 
             val streamUri = "$baseUrl/v1/tracks/$trackId/stream?app_name=$appName"
 
@@ -233,9 +231,7 @@ class AudiusMusicDataSource @Inject constructor() {
             val albumCount = item.optInt("album_count", 0)
 
             val picObj = item.optJSONObject("profile_picture")
-            val artUri = picObj?.optString("480x480", null)?.takeIf { it.isNotBlank() }
-                ?: picObj?.optString("1000x1000", null)?.takeIf { it.isNotBlank() }
-                ?: picObj?.optString("150x150", null)?.takeIf { it.isNotBlank() }
+            val artUri = optImage(picObj, "480x480", "1000x1000", "150x150")
 
             list.add(
                 Artist(
@@ -269,9 +265,7 @@ class AudiusMusicDataSource @Inject constructor() {
             val trackCount = item.optInt("track_count", 0)
 
             val artworkObj = item.optJSONObject("artwork")
-            val artUri = artworkObj?.optString("480x480", null)?.takeIf { it.isNotBlank() }
-                ?: artworkObj?.optString("1000x1000", null)?.takeIf { it.isNotBlank() }
-                ?: artworkObj?.optString("150x150", null)?.takeIf { it.isNotBlank() }
+            val artUri = optImage(artworkObj, "480x480", "1000x1000", "150x150")
 
             list.add(
                 Album(
@@ -287,6 +281,15 @@ class AudiusMusicDataSource @Inject constructor() {
             )
         }
         return list
+    }
+
+    private fun optImage(obj: JSONObject?, vararg keys: String): String? {
+        if (obj == null) return null
+        for (k in keys) {
+            val v = obj.optString(k, "")
+            if (v.isNotBlank()) return v
+        }
+        return null
     }
 
     private fun httpGet(urlStr: String): String? {

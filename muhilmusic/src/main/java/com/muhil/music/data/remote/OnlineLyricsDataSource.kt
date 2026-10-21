@@ -130,7 +130,7 @@ class OnlineLyricsDataSource @Inject constructor() {
             .sortedBy { it.timestampMs }
     }
 
-    private fun sanitize(input: String): String {
+    fun sanitize(input: String): String {
         return input.replace(Regex("\\(.*\\)|\\[.*]|feat\\..*|ft\\..*"), "").trim()
     }
 
