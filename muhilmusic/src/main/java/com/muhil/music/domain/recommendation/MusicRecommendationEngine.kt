@@ -231,7 +231,7 @@ class MusicRecommendationEngine @Inject constructor() {
 
     private fun extractGenre(song: Song): String {
         val text = "${song.album} ${song.title}".lowercase()
-        for (g in listOf("tamil", "bollywood", "electronic", "hip-hop", "rock", "pop", "r&b", "indie", "classical")) {
+        for (g in listOf("tamil", "bollywood", "electronic", "dance", "house", "techno", "edm", "hip-hop", "rap", "rock", "alternative", "pop", "r&b", "soul", "indie", "classical")) {
             if (text.contains(g)) return g
         }
         return ""

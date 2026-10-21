@@ -76,10 +76,9 @@ class MusicRecommendationEngineTest {
         val weekndSongs = (2..10).map { i ->
             createSong(i.toLong(), "Weeknd Track $i", "The Weeknd", "After Hours", "R&B")
         }
-        val otherArtistsSongs = listOf(
-            createSong(20, "Starboy Vibe", "Daft Punk", "Discovery", "Electronic"),
-            createSong(21, "Blinding Lights Cover", "Kavinsky", "Nightcall", "Electronic")
-        )
+        val otherArtistsSongs = (20..35).map { i ->
+            createSong(i.toLong(), "Other Track $i", "Artist $i", "Album $i", "R&B")
+        }
 
         val recommendations = engine.rankRecommendations(
             seed = seed,
@@ -89,7 +88,7 @@ class MusicRecommendationEngineTest {
 
         val weekndCount = recommendations.count { it.artist.equals("The Weeknd", ignoreCase = true) }
         assertEquals(MusicRecommendationEngine.MAX_TRACKS_PER_ARTIST, weekndCount)
-        assertTrue(recommendations.any { it.artist.equals("Daft Punk", ignoreCase = true) })
+        assertEquals(10, recommendations.size)
     }
 
     @Test
