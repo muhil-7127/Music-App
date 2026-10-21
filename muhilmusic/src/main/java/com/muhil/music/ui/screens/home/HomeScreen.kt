@@ -57,11 +57,14 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                // 1. Header with greeting, Muhil logo, and language selector
+                // 1. Header with greeting, user profile picture, and language selector
                 item {
                     HomeHeader(
+                        userName = uiState.userName,
+                        profilePictureUri = uiState.profilePictureUri,
                         currentLanguage = uiState.preferredLanguage,
                         onLanguageSelected = { lang -> viewModel.setPreferredLanguage(lang) },
+                        onProfileClick = { navController.navigate(Screen.Settings.route) },
                         onSettingsClick = { navController.navigate(Screen.Settings.route) }
                     )
                 }
@@ -536,8 +539,11 @@ fun ProminentSearchBar(
 
 @Composable
 fun HomeHeader(
+    userName: String = "Muhil",
+    profilePictureUri: String? = null,
     currentLanguage: String,
     onLanguageSelected: (String) -> Unit,
+    onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -562,14 +568,19 @@ fun HomeHeader(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            AsyncImage(
-                model = "android.resource://com.muhil.music/drawable/muhil_logo",
-                contentDescription = "Muhil Logo",
+            Box(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(CircleShape)
-                    .border(1.dp, GoldPrimary, CircleShape)
-            )
+                    .border(1.5.dp, GoldPrimary, CircleShape)
+                    .clickable { onProfileClick() }
+            ) {
+                AsyncImage(
+                    model = profilePictureUri ?: "android.resource://com.muhil.music/drawable/muhil_logo",
+                    contentDescription = "Profile Picture",
+                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                )
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -579,7 +590,7 @@ fun HomeHeader(
                         brush = Brush.horizontalGradient(listOf(GoldDark, GoldPrimary, GoldLight))
                     )
                 )
-                Text(greeting, style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
+                Text("$greeting, $userName", style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
             }
 
             // Language Selector Pill with Dropdown

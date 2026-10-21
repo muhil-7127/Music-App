@@ -24,17 +24,63 @@ import com.muhil.music.ui.screens.auth.AuthViewModel
 import com.muhil.music.ui.screens.home.MusicViewModel
 import com.muhil.music.ui.theme.*
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.platform.LocalContext
+import java.io.File
+import timber.log.Timber
+
+private val avatarPresets = listOf(
+    Pair("Muhil Gold", "android.resource://com.muhil.music/drawable/muhil_logo"),
+    Pair("Vibe Vinyl", "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80"),
+    Pair("Neon Stage", "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&auto=format&fit=crop&q=80"),
+    Pair("DJ Beats", "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&auto=format&fit=crop&q=80"),
+    Pair("Acoustic Melody", "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?w=400&auto=format&fit=crop&q=80")
+)
+
+private fun saveAvatarToInternalStorage(context: Context, uri: Uri): String? {
+    return try {
+        val file = File(context.filesDir, "user_profile_avatar.jpg")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            file.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        file.absolutePath
+    } catch (e: Exception) {
+        Timber.e(e, "Failed to save profile picture")
+        null
+    }
+}
+
 @Composable
 fun SettingsScreen(
     authViewModel: AuthViewModel = hiltViewModel(),
     musicViewModel: MusicViewModel = hiltViewModel(),
     navController: NavController
 ) {
+    val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
     val musicUiState by musicViewModel.uiState.collectAsState()
     var showSignOutDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
+    var showProfileDialog by remember { mutableStateOf(false) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val savedPath = saveAvatarToInternalStorage(context, uri)
+            if (savedPath != null) {
+                musicViewModel.setProfilePicture(savedPath)
+            }
+        }
+    }
 
     val languages = listOf("Tamil", "English", "Hindi", "All")
 
@@ -141,6 +187,148 @@ fun SettingsScreen(
         )
     }
 
+    if (showProfileDialog) {
+        var tempName by remember(musicUiState.userName) { mutableStateOf(musicUiState.userName) }
+        AlertDialog(
+            onDismissRequest = { showProfileDialog = false },
+            containerColor = BgCard,
+            title = {
+                Text(
+                    "Profile & Identity",
+                    style = MaterialTheme.typography.titleLarge.copy(color = TextPrimary, fontWeight = FontWeight.Bold)
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, GoldPrimary, CircleShape)
+                            .clickable { photoPickerLauncher.launch("image/*") },
+                        contentAlignment = Alignment.BottomEnd
+                    ) {
+                        AsyncImage(
+                            model = musicUiState.profilePictureUri ?: "android.resource://com.muhil.music/drawable/muhil_logo",
+                            contentDescription = "Avatar Preview",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = GoldPrimary,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PhotoCamera,
+                                contentDescription = "Pick Image",
+                                tint = BgBlack,
+                                modifier = Modifier.padding(5.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    OutlinedButton(
+                        onClick = { photoPickerLauncher.launch("image/*") },
+                        border = BorderStroke(1.dp, GoldPrimary),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldPrimary)
+                    ) {
+                        Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Choose from Gallery / Photos")
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Text(
+                        "Or Choose a Preset Avatar",
+                        style = MaterialTheme.typography.labelMedium.copy(color = TextSecondary)
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(avatarPresets) { (name, url) ->
+                            val isSelected = musicUiState.profilePictureUri == url
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable { musicViewModel.setProfilePicture(url) }
+                            ) {
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = name,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .border(
+                                            width = if (isSelected) 2.5.dp else 1.dp,
+                                            color = if (isSelected) GoldPrimary else SilverMid.copy(alpha = 0.5f),
+                                            shape = CircleShape
+                                        )
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = name,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = if (isSelected) GoldPrimary else TextTertiary,
+                                        fontSize = 10.sp
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(18.dp))
+
+                    OutlinedTextField(
+                        value = tempName,
+                        onValueChange = { tempName = it },
+                        label = { Text("Your Display Name") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = GoldPrimary,
+                            unfocusedBorderColor = SilverMid.copy(alpha = 0.5f),
+                            focusedLabelColor = GoldPrimary,
+                            unfocusedLabelColor = TextTertiary,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (musicUiState.profilePictureUri != null) {
+                        Spacer(Modifier.height(12.dp))
+                        TextButton(onClick = { musicViewModel.setProfilePicture(null) }) {
+                            Text("Reset Photo to Default", color = ErrorRed, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                GoldGradientButton(
+                    text = "Save",
+                    onClick = {
+                        musicViewModel.setUserName(tempName)
+                        showProfileDialog = false
+                    },
+                    modifier = Modifier.height(40.dp)
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showProfileDialog = false }) {
+                    Text("Close", color = GoldPrimary)
+                }
+            }
+        )
+    }
+
     Scaffold(
         containerColor = BgBlack,
         topBar = { MuhilTopBar(title = "Settings", onBack = { navController.popBackStack() }) }
@@ -157,17 +345,44 @@ fun SettingsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AsyncImage(
-                        model = "android.resource://com.muhil.music/drawable/muhil_logo",
-                        contentDescription = "Logo",
-                        modifier = Modifier.size(80.dp).clip(CircleShape)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, GoldPrimary, CircleShape)
+                            .clickable { showProfileDialog = true },
+                        contentAlignment = Alignment.BottomEnd
+                    ) {
+                        AsyncImage(
+                            model = musicUiState.profilePictureUri ?: "android.resource://com.muhil.music/drawable/muhil_logo",
+                            contentDescription = "Profile Picture",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = GoldPrimary,
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Edit,
+                                contentDescription = "Edit Profile Picture",
+                                tint = BgBlack,
+                                modifier = Modifier.padding(5.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
-                    Text("Muhil Music", style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        brush = Brush.horizontalGradient(listOf(GoldDark, GoldPrimary, GoldLight))
-                    ))
-                    Text("Version 1.1.0 • Tamil-First Edition", style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
+                    Text(
+                        text = musicUiState.userName,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            brush = Brush.horizontalGradient(listOf(GoldDark, GoldPrimary, GoldLight))
+                        )
+                    )
+                    Text(
+                        text = "Tap to set photo & name • v1.1.0",
+                        style = MaterialTheme.typography.bodySmall.copy(color = SilverMid)
+                    )
                 }
             }
 
@@ -197,7 +412,13 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             // Account section
-            SettingsSection(title = "Account") {
+            SettingsSection(title = "Profile & Account") {
+                SettingsClickableItem(
+                    icon = Icons.Filled.AccountCircle,
+                    label = "Profile Details",
+                    value = "${musicUiState.userName} • Tap to edit",
+                    onClick = { showProfileDialog = true }
+                )
                 val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
                 if (user != null) {
                     SettingsItem(icon = Icons.Filled.Email, label = "Email", value = user.email ?: "Not set")
@@ -213,7 +434,7 @@ fun SettingsScreen(
 
             // App section
             SettingsSection(title = "Playback & Streaming") {
-                SettingsItem(icon = Icons.Filled.MusicNote, label = "Streaming Mode", value = "Audius Full Track + Previews")
+                SettingsItem(icon = Icons.Filled.MusicNote, label = "Streaming Mode", value = "100% Full Track Streaming (JioSaavn + Audius)")
                 SettingsItem(icon = Icons.Filled.LibraryMusic, label = "Library Path", value = "All External Storage")
             }
 

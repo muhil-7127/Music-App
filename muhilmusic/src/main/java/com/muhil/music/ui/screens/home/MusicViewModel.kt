@@ -43,6 +43,8 @@ data class MusicUiState(
     val searchAlbums: List<Album> = emptyList(),
     val searchHistory: List<String> = emptyList(),
     val preferredLanguage: String = "Tamil",
+    val userName: String = "Muhil",
+    val profilePictureUri: String? = null,
     val tamilHits: List<Song> = emptyList(),
     val tamilSoundtracks: List<MovieSoundtrack> = emptyList(),
     val tamilClassics: List<Song> = emptyList(),
@@ -92,6 +94,28 @@ class MusicViewModel @Inject constructor(
                 _uiState.update { it.copy(searchHistory = history) }
             }
         }
+        viewModelScope.launch {
+            repository.userPreferencesManager.userName.collect { name ->
+                _uiState.update { it.copy(userName = name) }
+            }
+        }
+        viewModelScope.launch {
+            repository.userPreferencesManager.profilePictureUri.collect { uri ->
+                _uiState.update { it.copy(profilePictureUri = uri) }
+            }
+        }
+    }
+
+    fun setUserName(name: String) {
+        viewModelScope.launch {
+            repository.userPreferencesManager.setUserName(name)
+        }
+    }
+
+    fun setProfilePicture(uri: String?) {
+        viewModelScope.launch {
+            repository.userPreferencesManager.setProfilePictureUri(uri)
+        }
     }
 
     private fun observeFavorites() {
@@ -130,61 +154,77 @@ class MusicViewModel @Inject constructor(
 
     /**
      * Primary online music discovery: loads featured songs, top artists, trending albums,
-     * and Tamil-focused discovery categories concurrently.
+     * and Tamil-focused discovery categories concurrently and progressively.
+     * Response time is ultra-fast: each section appears immediately as soon as ready.
      */
     fun loadHomeContent(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            try {
-                coroutineScope {
-                    val featuredDef = async { repository.getFeaturedSongs(forceRefresh) }
-                    val artistsDef = async { repository.getTopArtists(forceRefresh) }
-                    val albumsDef = async { repository.getTrendingAlbums(forceRefresh) }
-                    val tamilHitsDef = async { repository.getTamilHits(forceRefresh) }
-                    val tamilSoundtracksDef = async { repository.getTamilSoundtracks(forceRefresh) }
-                    val tamilClassicsDef = async { repository.getTamilClassics(forceRefresh) }
-                    val tamilMelodiesDef = async { repository.getTamilMelodies(forceRefresh) }
-                    val tamilArtistsDef = async { repository.getTamilArtists(forceRefresh) }
+            _uiState.update { it.copy(isLoading = it.featuredSongs.isEmpty() && it.tamilHits.isEmpty(), error = null) }
 
-                    val featured = featuredDef.await()
-                    val artists = artistsDef.await()
-                    val albums = albumsDef.await()
-                    val tamilHits = tamilHitsDef.await()
-                    val tamilSoundtracks = tamilSoundtracksDef.await()
-                    val tamilClassics = tamilClassicsDef.await()
-                    val tamilMelodies = tamilMelodiesDef.await()
-                    val tamilArtists = tamilArtistsDef.await()
+            // 1. Featured Top Tracks (Immediate)
+            launch {
+                val featured = try { repository.getFeaturedSongs(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (featured.isNotEmpty()) {
+                    _uiState.update { it.copy(featuredSongs = featured, isLoading = false) }
+                }
+            }
 
-                    _uiState.update {
-                        it.copy(
-                            featuredSongs = featured,
-                            topArtists = artists,
-                            trendingAlbums = albums,
-                            tamilHits = tamilHits,
-                            tamilSoundtracks = tamilSoundtracks,
-                            tamilClassics = tamilClassics,
-                            tamilMelodies = tamilMelodies,
-                            tamilArtists = tamilArtists,
-                            isLoading = false,
-                            error = if (featured.isEmpty() && it.localSongs.isEmpty() && tamilHits.isEmpty()) "Unable to reach music servers. Tap retry." else null
-                        )
-                    }
-
-                    // Seed recommendations with top track if no seed exists yet
+            // 2. Tamil Hits (Immediate)
+            launch {
+                val hits = try { repository.getTamilHits(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (hits.isNotEmpty()) {
+                    _uiState.update { it.copy(tamilHits = hits, isLoading = false) }
                     if (_uiState.value.recommendationSeed == null) {
-                        val seed = tamilHits.firstOrNull() ?: featured.firstOrNull()
-                        if (seed != null) {
-                            loadRecommendations(seed)
-                        }
+                        hits.firstOrNull()?.let { loadRecommendations(it) }
                     }
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "Error loading online home content")
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = if (it.featuredSongs.isEmpty() && it.localSongs.isEmpty() && it.tamilHits.isEmpty()) "Failed to load online music. Check connection." else null
-                    )
+            }
+
+            // 3. Tamil Movie Soundtracks
+            launch {
+                val soundtracks = try { repository.getTamilSoundtracks(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (soundtracks.isNotEmpty()) {
+                    _uiState.update { it.copy(tamilSoundtracks = soundtracks) }
+                }
+            }
+
+            // 4. Tamil Melodies & Romance
+            launch {
+                val melodies = try { repository.getTamilMelodies(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (melodies.isNotEmpty()) {
+                    _uiState.update { it.copy(tamilMelodies = melodies) }
+                }
+            }
+
+            // 5. Tamil Evergreen Classics
+            launch {
+                val classics = try { repository.getTamilClassics(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (classics.isNotEmpty()) {
+                    _uiState.update { it.copy(tamilClassics = classics) }
+                }
+            }
+
+            // 6. Top Artists
+            launch {
+                val artists = try { repository.getTopArtists(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (artists.isNotEmpty()) {
+                    _uiState.update { it.copy(topArtists = artists) }
+                }
+            }
+
+            // 7. Trending Albums
+            launch {
+                val albums = try { repository.getTrendingAlbums(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (albums.isNotEmpty()) {
+                    _uiState.update { it.copy(trendingAlbums = albums) }
+                }
+            }
+
+            // 8. Tamil Top Artists
+            launch {
+                val tamilArtists = try { repository.getTamilArtists(forceRefresh) } catch (_: Exception) { emptyList() }
+                if (tamilArtists.isNotEmpty()) {
+                    _uiState.update { it.copy(tamilArtists = tamilArtists) }
                 }
             }
         }
@@ -254,33 +294,24 @@ class MusicViewModel @Inject constructor(
         }
 
         searchJob = viewModelScope.launch {
-            delay(300)
+            delay(200)
             _uiState.update { it.copy(isSearching = true, searchError = null) }
             val trimmedQuery = query.trim()
             repository.saveSearchQuery(trimmedQuery)
             try {
-                coroutineScope {
-                    val rankedDef = async { repository.searchOnlineRanked(trimmedQuery, preferredLanguage = _uiState.value.preferredLanguage) }
-                    val artistsDef = async { repository.searchOnlineArtists(trimmedQuery) }
-                    val albumsDef = async { repository.searchOnlineAlbums(trimmedQuery) }
-
-                    val ranked = rankedDef.await()
-                    val artists = artistsDef.await()
-                    val albums = albumsDef.await()
-
-                    _uiState.update {
-                        it.copy(
-                            searchResults = ranked.rankedSongs,
-                            searchTopMatch = ranked.topMatch,
-                            searchMovieSoundtrack = ranked.movieSoundtrack,
-                            searchSoundtracks = ranked.allSoundtracks,
-                            searchIntent = ranked.intent,
-                            searchArtists = artists,
-                            searchAlbums = albums,
-                            isSearching = false,
-                            searchError = null
-                        )
-                    }
+                val ranked = repository.searchOnlineRanked(trimmedQuery, preferredLanguage = _uiState.value.preferredLanguage)
+                _uiState.update {
+                    it.copy(
+                        searchResults = ranked.rankedSongs,
+                        searchTopMatch = ranked.topMatch,
+                        searchMovieSoundtrack = ranked.movieSoundtrack,
+                        searchSoundtracks = ranked.allSoundtracks,
+                        searchIntent = ranked.intent,
+                        searchArtists = ranked.artists,
+                        searchAlbums = ranked.albums,
+                        isSearching = false,
+                        searchError = null
+                    )
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error during web search")

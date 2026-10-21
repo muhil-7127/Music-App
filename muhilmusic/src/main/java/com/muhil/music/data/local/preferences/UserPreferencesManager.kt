@@ -29,6 +29,8 @@ class UserPreferencesManager @Inject constructor(
         val KEY_SKIPPED_SONGS = stringSetPreferencesKey("skipped_song_ids")
         val KEY_PLAY_COUNTS = stringPreferencesKey("play_counts_json")
         val KEY_AUDIO_QUALITY = stringPreferencesKey("audio_quality")
+        val KEY_USER_NAME = stringPreferencesKey("user_display_name")
+        val KEY_PROFILE_PICTURE_URI = stringPreferencesKey("profile_picture_uri")
 
         const val LANG_TAMIL = "Tamil"
         const val LANG_ENGLISH = "English"
@@ -188,4 +190,32 @@ class UserPreferencesManager @Inject constructor(
     suspend fun saveSearchQuery(query: String) = addSearchQuery(query)
     suspend fun recordSongSkipped(songId: Long) = recordSkip(songId)
     suspend fun recordSongPlayed(songId: Long) = recordPlay(songId)
+
+    val userName: Flow<String> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences ->
+            preferences[KEY_USER_NAME] ?: "Muhil"
+        }
+
+    suspend fun setUserName(name: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_USER_NAME] = name.trim().ifBlank { "Muhil" }
+        }
+    }
+
+    val profilePictureUri: Flow<String?> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences ->
+            preferences[KEY_PROFILE_PICTURE_URI]
+        }
+
+    suspend fun setProfilePictureUri(uri: String?) {
+        dataStore.edit { preferences ->
+            if (uri.isNullOrBlank()) {
+                preferences.remove(KEY_PROFILE_PICTURE_URI)
+            } else {
+                preferences[KEY_PROFILE_PICTURE_URI] = uri.trim()
+            }
+        }
+    }
 }
