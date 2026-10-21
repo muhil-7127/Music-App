@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.muhil.music.domain.model.RepeatMode
+import com.muhil.music.domain.model.Song
 import com.muhil.music.ui.components.*
 import com.muhil.music.ui.navigation.Screen
 import com.muhil.music.ui.screens.home.MusicViewModel
@@ -273,7 +275,7 @@ fun NowPlayingScreen(
                             .fillMaxWidth()
                             .heightIn(max = 240.dp)
                     ) {
-                        items(playback.queue, key = { it.id }) { qSong ->
+                        items(playback.queue, key = { it.id }) { qSong: Song ->
                             val isCurrent = qSong.id == playback.currentSong?.id
                             Row(
                                 modifier = Modifier
@@ -318,7 +320,7 @@ fun NowPlayingScreen(
                                 .fillMaxWidth()
                                 .heightIn(max = 240.dp)
                         ) {
-                            items(uiState.recommendations, key = { it.id }) { recSong ->
+                            items(uiState.recommendations, key = { it.id }) { recSong: Song ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
