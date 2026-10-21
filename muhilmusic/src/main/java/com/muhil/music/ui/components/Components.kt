@@ -1,4 +1,4 @@
-﻿package com.muhil.music.ui.components
+package com.muhil.music.ui.components
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -13,13 +13,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import coil3.compose.AsyncImage
+import com.muhil.music.domain.model.Album
+import com.muhil.music.domain.model.Artist
 import com.muhil.music.domain.model.Song
 import com.muhil.music.ui.theme.*
 
@@ -36,7 +36,7 @@ fun AlbumArtImage(
             .background(BgCard),
         contentAlignment = Alignment.Center
     ) {
-        if (uri != null) {
+        if (!uri.isNullOrBlank()) {
             AsyncImage(
                 model = uri,
                 contentDescription = contentDescription,
@@ -48,9 +48,29 @@ fun AlbumArtImage(
                 imageVector = Icons.Rounded.MusicNote,
                 contentDescription = null,
                 tint = GoldPrimary.copy(alpha = 0.5f),
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(36.dp)
             )
         }
+    }
+}
+
+@Composable
+fun WebPreviewBadge(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(4.dp),
+        color = GoldPrimary.copy(alpha = 0.12f),
+        border = BorderStroke(0.5.dp, GoldPrimary.copy(alpha = 0.6f))
+    ) {
+        Text(
+            text = "PREVIEW",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = GoldPrimary
+            ),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+        )
     }
 }
 
@@ -77,16 +97,23 @@ fun SongListItem(
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isPlaying) GoldPrimary else TextPrimary
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = song.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.SemiBold,
+                        color = if (isPlaying) GoldPrimary else TextPrimary
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (song.isPreview) {
+                    Spacer(Modifier.width(6.dp))
+                    WebPreviewBadge()
+                }
+            }
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = "${song.artist} • ${song.album}",
                 style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
@@ -116,6 +143,166 @@ fun formatDuration(ms: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+@Composable
+fun FeaturedSongCard(
+    song: Song,
+    isPlaying: Boolean = false,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = BgCard,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, if (isPlaying) GoldPrimary else GoldPrimary.copy(alpha = 0.2f)),
+        modifier = modifier.width(148.dp)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(128.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                AlbumArtImage(
+                    uri = song.albumArtUri,
+                    modifier = Modifier.fillMaxSize(),
+                    cornerRadius = 12.dp
+                )
+                if (song.isPreview) {
+                    WebPreviewBadge(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 6.dp, end = 6.dp)
+                        .background(GoldPrimary, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = BgBlack,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = song.title,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = if (isPlaying) GoldPrimary else TextPrimary
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = song.artist,
+                style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun ArtistCircleCard(
+    artist: Artist,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(88.dp)
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .clip(CircleShape)
+                .border(1.5.dp, GoldPrimary.copy(alpha = 0.5f), CircleShape)
+                .background(BgCard),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!artist.artUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = artist.artUri,
+                    contentDescription = artist.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.Person,
+                    contentDescription = null,
+                    tint = GoldPrimary,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = artist.name,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+fun AlbumSquareCard(
+    album: Album,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = BgCard,
+        shadowElevation = 6.dp,
+        border = BorderStroke(0.8.dp, SilverDark.copy(alpha = 0.25f)),
+        modifier = modifier.width(135.dp)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            AlbumArtImage(
+                uri = album.artUri,
+                modifier = Modifier
+                    .size(115.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+                cornerRadius = 10.dp
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = album.title,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = album.artist,
+                style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }
 
 @Composable
@@ -170,23 +357,23 @@ fun MiniNowPlayingBar(
     if (song == null) return
     val infiniteTransition = rememberInfiniteTransition(label = "glow")
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 0.3f, targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse),
         label = "glowAlpha"
     )
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = BgCard,
-        shadowElevation = 8.dp,
+        shadowElevation = 10.dp,
         border = BorderStroke(
             width = 1.dp,
             brush = Brush.horizontalGradient(listOf(
                 GoldPrimary.copy(alpha = glowAlpha),
-                GoldPrimary.copy(alpha = 0.1f),
+                GoldPrimary.copy(alpha = 0.15f),
                 GoldPrimary.copy(alpha = glowAlpha)
             ))
         )
@@ -197,17 +384,34 @@ fun MiniNowPlayingBar(
         ) {
             AlbumArtImage(
                 uri = song.albumArtUri,
-                modifier = Modifier.size(46.dp),
+                modifier = Modifier.size(48.dp),
                 cornerRadius = 10.dp
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(song.title, style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = FontWeight.SemiBold, color = TextPrimary
-                ), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artist, style = MaterialTheme.typography.labelSmall.copy(
-                    color = TextTertiary
-                ), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = song.title,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (song.isPreview) {
+                        Spacer(Modifier.width(6.dp))
+                        WebPreviewBadge()
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = song.artist,
+                    style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             IconButton(onClick = onPlayPause) {
                 Icon(

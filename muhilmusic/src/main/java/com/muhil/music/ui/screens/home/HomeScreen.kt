@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
+import com.muhil.music.domain.model.Song
 import com.muhil.music.ui.components.*
 import com.muhil.music.ui.navigation.Screen
 import com.muhil.music.ui.theme.*
@@ -37,15 +38,13 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
 
-    // Permission launcher
+    // Permission launcher for secondary local MP3 feature
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> viewModel.loadLibrary(granted) }
+    ) { granted -> viewModel.loadLocalLibrary(granted) }
 
-    LaunchedEffect(Unit) {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-            Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-        permissionLauncher.launch(permission)
+    val genres = remember {
+        listOf("All", "Pop", "Rock", "Hip-Hop", "R&B", "Electronic", "Tamil", "Bollywood", "Classical", "Indie")
     }
 
     Scaffold(
@@ -55,17 +54,16 @@ fun HomeScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 160.dp)
+                contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                // Header with greeting and logo
+                // 1. Header with greeting and Muhil Logo
                 item {
                     HomeHeader(
-                        onSearchClick = { navController.navigate(Screen.Search.route) },
                         onSettingsClick = { navController.navigate(Screen.Settings.route) }
                     )
                 }
 
-                // Mini Now Playing
+                // 2. Current-song mini controller near top of screen (as requested)
                 if (playbackState.currentSong != null) {
                     item {
                         MiniNowPlayingBar(
@@ -73,17 +71,174 @@ fun HomeScreen(
                             isPlaying = playbackState.isPlaying,
                             onPlayPause = viewModel::togglePlayPause,
                             onNext = viewModel::next,
-                            onClick = { navController.navigate(Screen.NowPlaying.route) }
+                            onClick = { navController.navigate(Screen.NowPlaying.route) },
+                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                         )
                     }
                 }
 
-                // Quick Nav Chips
+                // 3. Quick Navigation Chips (Library, Playlists, Favorites, Local)
                 item {
-                    QuickNavRow(navController = navController)
+                    HomeQuickNavRow(
+                        navController = navController,
+                        onLocalClick = {
+                            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                                Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+                            permissionLauncher.launch(permission)
+                            navController.navigate(Screen.AllSongs.route)
+                        }
+                    )
                 }
 
-                // Recently Played
+                // 4. Genre Filter Discovery Chips
+                item {
+                    Text(
+                        text = "Explore Genres",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        ),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(genres) { genre ->
+                            val isSelected = uiState.selectedGenre.equals(genre, ignoreCase = true)
+                            Surface(
+                                onClick = { viewModel.selectGenre(genre) },
+                                shape = RoundedCornerShape(20.dp),
+                                color = if (isSelected) GoldPrimary else BgCard,
+                                border = BorderStroke(1.dp, if (isSelected) GoldLight else GoldPrimary.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = genre,
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) BgBlack else TextPrimary
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                // 5. Genre-Specific Songs (when a specific genre is selected)
+                if (uiState.selectedGenre != "All" && uiState.genreSongs.isNotEmpty()) {
+                    item {
+                        SectionHeader("${uiState.selectedGenre} Hits") {}
+                    }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(uiState.genreSongs) { song ->
+                                FeaturedSongCard(
+                                    song = song,
+                                    isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                    onClick = {
+                                        viewModel.playSong(song)
+                                        navController.navigate(Screen.NowPlaying.route)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 6. Featured Web Songs (Primary Online Discovery)
+                item {
+                    SectionHeader("Featured Web Tracks") {
+                        navController.navigate(Screen.Search.route)
+                    }
+                }
+
+                if (uiState.isLoading && uiState.featuredSongs.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = GoldPrimary, modifier = Modifier.size(36.dp))
+                                Spacer(Modifier.height(10.dp))
+                                Text("Discovering web music...", style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
+                            }
+                        }
+                    }
+                } else if (uiState.featuredSongs.isNotEmpty()) {
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(uiState.featuredSongs) { song ->
+                                FeaturedSongCard(
+                                    song = song,
+                                    isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
+                                    onClick = {
+                                        viewModel.playSong(song)
+                                        navController.navigate(Screen.NowPlaying.route)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 7. Popular Artists
+                if (uiState.topArtists.isNotEmpty()) {
+                    item {
+                        SectionHeader("Popular Artists") {}
+                    }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(uiState.topArtists) { artist ->
+                                ArtistCircleCard(
+                                    artist = artist,
+                                    onClick = {
+                                        viewModel.search(artist.name)
+                                        navController.navigate(Screen.Search.route)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 8. Trending Albums
+                if (uiState.trendingAlbums.isNotEmpty()) {
+                    item {
+                        SectionHeader("Trending Albums") {}
+                    }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(uiState.trendingAlbums) { album ->
+                                AlbumSquareCard(
+                                    album = album,
+                                    onClick = {
+                                        viewModel.search(album.title)
+                                        navController.navigate(Screen.Search.route)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 9. Recently Played
                 if (uiState.recentlyPlayed.isNotEmpty()) {
                     item {
                         SectionHeader("Recently Played") { navController.navigate(Screen.RecentPlay.route) }
@@ -94,13 +249,12 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             items(uiState.recentlyPlayed.take(8)) { recent ->
-                                val song = uiState.allSongs.find { it.id == recent.songId }
                                 MiniSongCard(
                                     title = recent.title,
                                     artist = recent.artist,
                                     artUri = recent.albumArtUri,
                                     onClick = {
-                                        song?.let { viewModel.playSong(it) }
+                                        viewModel.playSong(recent.toSong())
                                         navController.navigate(Screen.NowPlaying.route)
                                     }
                                 )
@@ -109,9 +263,8 @@ fun HomeScreen(
                     }
                 }
 
-                // Favorites
-                val favSongs = viewModel.getFavoriteSongs()
-                if (favSongs.isNotEmpty()) {
+                // 10. Favorites
+                if (uiState.favoriteSongs.isNotEmpty()) {
                     item {
                         SectionHeader("Favorites") { navController.navigate(Screen.Favorites.route) }
                     }
@@ -120,7 +273,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(favSongs.take(8)) { song ->
+                            items(uiState.favoriteSongs.take(8)) { song ->
                                 MiniSongCard(
                                     title = song.title,
                                     artist = song.artist,
@@ -135,50 +288,63 @@ fun HomeScreen(
                     }
                 }
 
-                // Recently Added
-                val recentlyAdded = viewModel.getRecentlyAddedSongs()
-                if (recentlyAdded.isNotEmpty()) {
-                    item {
-                        SectionHeader("Recently Added") { navController.navigate(Screen.AllSongs.route) }
-                    }
-                    items(recentlyAdded.take(5)) { song ->
-                        SongListItem(
-                            song = song,
-                            isFavorite = song.id in uiState.favoriteSongIds,
-                            isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
-                            onClick = {
-                                viewModel.playSong(song)
-                                navController.navigate(Screen.NowPlaying.route)
-                            },
-                            onFavoriteClick = { viewModel.toggleFavorite(song.id) }
-                        )
-                        GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    }
-                }
-
-                // Empty state
-                if (!uiState.isLoading && uiState.allSongs.isEmpty() && uiState.hasPermission) {
-                    item {
-                        EmptyLibraryState(onScan = {
+                // 11. Local Device Audio Banner (Secondary Feature)
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    Surface(
+                        onClick = {
                             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
                                 Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
                             permissionLauncher.launch(permission)
-                        })
+                            navController.navigate(Screen.AllSongs.route)
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = BgCard,
+                        border = BorderStroke(1.dp, SilverDark.copy(alpha = 0.25f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Rounded.FolderOpen,
+                                contentDescription = null,
+                                tint = GoldPrimary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Device Audio Files",
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                )
+                                Text(
+                                    "Tap to browse and play MP3 files stored on this phone",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary)
+                                )
+                            }
+                            Icon(
+                                Icons.Rounded.ChevronRight,
+                                contentDescription = null,
+                                tint = SilverDark
+                            )
+                        }
                     }
-                }
-
-                // Permission denied
-                if (!uiState.hasPermission && !uiState.isLoading) {
-                    item { PermissionDeniedState(onGrant = {
-                        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                            Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-                        permissionLauncher.launch(permission)
-                    }) }
                 }
             }
 
-            // Bottom Search Bar
-            Box(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)) {
+            // 12. Floating Search Bar near bottom of screen (as requested)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 20.dp)
+            ) {
                 FloatingSearchBar(onClick = { navController.navigate(Screen.Search.route) })
             }
         }
@@ -186,7 +352,7 @@ fun HomeScreen(
 }
 
 @Composable
-fun HomeHeader(onSearchClick: () -> Unit, onSettingsClick: () -> Unit) {
+fun HomeHeader(onSettingsClick: () -> Unit) {
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when {
@@ -199,46 +365,56 @@ fun HomeHeader(onSearchClick: () -> Unit, onSettingsClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .background(Brush.verticalGradient(listOf(BgDeepNavy, BgBlack)))
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 18.dp, vertical = 14.dp)
     ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = "android.resource://com.muhil.music/drawable/muhil_logo",
-                    contentDescription = "Muhil Logo",
-                    modifier = Modifier.size(44.dp).clip(CircleShape)
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Muhil Music", style = MaterialTheme.typography.titleLarge.copy(
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            AsyncImage(
+                model = "android.resource://com.muhil.music/drawable/muhil_logo",
+                contentDescription = "Muhil Logo",
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, GoldPrimary, CircleShape)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Muhil Music",
+                    style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.ExtraBold,
                         brush = Brush.horizontalGradient(listOf(GoldDark, GoldPrimary, GoldLight))
-                    ))
-                    Text(greeting, style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
-                }
-                IconButton(onClick = onSettingsClick) {
-                    Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = SilverDark)
-                }
+                    )
+                )
+                Text(greeting, style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
+            }
+            IconButton(onClick = onSettingsClick) {
+                Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = SilverLight)
             }
         }
     }
 }
 
 @Composable
-fun QuickNavRow(navController: NavController) {
+fun HomeQuickNavRow(
+    navController: NavController,
+    onLocalClick: () -> Unit
+) {
     val items = listOf(
-        Triple(Icons.Rounded.LibraryMusic, "Songs",    Screen.AllSongs.route),
-        Triple(Icons.Rounded.Album,         "Albums",   Screen.Albums.route),
-        Triple(Icons.Rounded.Person,        "Artists",  Screen.Artists.route),
-        Triple(Icons.Rounded.QueueMusic,    "Playlists",Screen.Playlists.route),
-        Triple(Icons.Rounded.Favorite,      "Favorites",Screen.Favorites.route)
+        Triple(Icons.Rounded.Favorite,   "Favorites",  { navController.navigate(Screen.Favorites.route) }),
+        Triple(Icons.Rounded.QueueMusic, "Playlists",  { navController.navigate(Screen.Playlists.route) }),
+        Triple(Icons.Rounded.Album,      "Albums",     { navController.navigate(Screen.Albums.route) }),
+        Triple(Icons.Rounded.Person,     "Artists",    { navController.navigate(Screen.Artists.route) }),
+        Triple(Icons.Rounded.Folder,     "Local MP3s", onLocalClick)
     )
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(items) { (icon, label, route) ->
-            QuickNavChip(icon = icon, label = label, onClick = { navController.navigate(route) })
+        items(items) { (icon, label, onClick) ->
+            QuickNavChip(icon = icon, label = label, onClick = onClick)
         }
     }
 }
@@ -249,10 +425,10 @@ fun QuickNavChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: S
         onClick = onClick,
         shape = RoundedCornerShape(50),
         color = BgCard,
-        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.3f))
+        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.35f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(icon, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(16.dp))
@@ -265,16 +441,19 @@ fun QuickNavChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: S
 @Composable
 fun SectionHeader(title: String, onSeeAll: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium.copy(
-            fontWeight = FontWeight.Bold, color = TextPrimary
-        ))
-        TextButton(onClick = onSeeAll) {
-            Text("See All", style = MaterialTheme.typography.labelMedium.copy(color = GoldPrimary))
-        }
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+        )
     }
 }
 
@@ -282,21 +461,31 @@ fun SectionHeader(title: String, onSeeAll: () -> Unit) {
 fun MiniSongCard(title: String, artist: String, artUri: String?, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(120.dp)
+            .width(115.dp)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         AlbumArtImage(
             uri = artUri,
-            modifier = Modifier.size(110.dp),
+            modifier = Modifier.size(105.dp),
             cornerRadius = 12.dp
         )
         Spacer(Modifier.height(6.dp))
-        Text(title, style = MaterialTheme.typography.labelMedium.copy(
-            fontWeight = FontWeight.SemiBold, color = TextPrimary
-        ), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(artist, style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary),
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            title,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            artist,
+            style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -305,9 +494,9 @@ fun FloatingSearchBar(onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(32.dp),
-        color = BgCard,
-        shadowElevation = 12.dp,
-        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.4f)),
+        color = BgElevated,
+        shadowElevation = 14.dp,
+        border = BorderStroke(1.2.dp, GoldPrimary.copy(alpha = 0.6f)),
         modifier = Modifier.padding(horizontal = 20.dp)
     ) {
         Row(
@@ -316,37 +505,10 @@ fun FloatingSearchBar(onClick: () -> Unit) {
         ) {
             Icon(Icons.Rounded.Search, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
-            Text("Search songs, artists, albums...", style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary))
+            Text(
+                "Search web songs, artists, albums...",
+                style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary)
+            )
         }
-    }
-}
-
-@Composable
-fun EmptyLibraryState(onScan: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(Icons.Rounded.MusicOff, contentDescription = null, tint = GoldPrimary.copy(alpha = 0.5f), modifier = Modifier.size(80.dp))
-        Spacer(Modifier.height(16.dp))
-        Text("No Music Found", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TextPrimary))
-        Text("Add MP3 files to your device to start listening", style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary),
-            modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
-        GoldGradientButton(text = "Scan Library", onClick = onScan, modifier = Modifier.fillMaxWidth())
-    }
-}
-
-@Composable
-fun PermissionDeniedState(onGrant: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(Icons.Rounded.FolderOff, contentDescription = null, tint = ErrorRed.copy(alpha = 0.7f), modifier = Modifier.size(80.dp))
-        Spacer(Modifier.height(16.dp))
-        Text("Permission Required", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TextPrimary))
-        Text("Muhil Music needs access to your audio files to play music", style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary),
-            modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
-        GoldGradientButton(text = "Grant Permission", onClick = onGrant, modifier = Modifier.fillMaxWidth())
     }
 }

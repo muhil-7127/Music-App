@@ -188,7 +188,18 @@ fun LoginScreen(
                 Text("Continue with Phone")
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(10.dp))
+
+            TextButton(
+                onClick = onNavigateToHome,
+                modifier = Modifier.fillMaxWidth().height(44.dp)
+            ) {
+                Icon(Icons.Rounded.Explore, contentDescription = null, tint = SilverMid, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Explore as Guest", color = SilverLight, style = MaterialTheme.typography.bodyMedium)
+            }
+
+            Spacer(Modifier.height(24.dp))
             Row {
                 Text("Don't have an account? ", color = SilverDark)
                 Text(

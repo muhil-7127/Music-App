@@ -1,4 +1,4 @@
-﻿package com.muhil.music.ui.screens.library
+package com.muhil.music.ui.screens.library
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -218,15 +218,13 @@ fun RecentlyPlayedScreen(
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
             items(uiState.recentlyPlayed) { recent ->
-                val song = uiState.allSongs.find { it.id == recent.songId }
+                val song = uiState.allSongs.find { it.id == recent.songId } ?: recent.toSong()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            song?.let {
-                                viewModel.playSong(it)
-                                navController.navigate(Screen.NowPlaying.route)
-                            }
+                            viewModel.playSong(song)
+                            navController.navigate(Screen.NowPlaying.route)
                         }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically

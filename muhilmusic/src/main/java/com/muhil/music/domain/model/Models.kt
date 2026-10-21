@@ -1,4 +1,4 @@
-﻿package com.muhil.music.domain.model
+package com.muhil.music.domain.model
 
 data class Song(
     val id: Long,
@@ -11,7 +11,10 @@ data class Song(
     val dateAdded: Long = 0L,
     val isFavorite: Boolean = false,
     val trackNumber: Int = 0,
-    val size: Long = 0L
+    val size: Long = 0L,
+    val isOnline: Boolean = false,
+    val isPreview: Boolean = false,
+    val genre: String? = null
 )
 
 data class Album(
@@ -20,7 +23,8 @@ data class Album(
     val artist: String,
     val artUri: String? = null,
     val songCount: Int = 0,
-    val year: Int = 0
+    val year: Int = 0,
+    val isOnline: Boolean = false
 )
 
 data class Artist(
@@ -28,7 +32,8 @@ data class Artist(
     val name: String,
     val albumCount: Int = 0,
     val songCount: Int = 0,
-    val artUri: String? = null
+    val artUri: String? = null,
+    val isOnline: Boolean = false
 )
 
 data class Playlist(

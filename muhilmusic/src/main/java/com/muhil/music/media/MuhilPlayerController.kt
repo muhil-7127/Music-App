@@ -1,4 +1,4 @@
-﻿package com.muhil.music.media
+package com.muhil.music.media
 
 import android.content.ComponentName
 import android.content.Context
@@ -35,9 +35,26 @@ class MuhilPlayerController @Inject constructor(
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) { syncState() }
         override fun onIsPlayingChanged(isPlaying: Boolean) { syncState() }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            controller?.let { c ->
+                val idx = c.currentMediaItemIndex
+                val queue = _playbackState.value.queue
+                val newSong = queue.getOrNull(idx)
+                if (newSong != null) {
+                    _playbackState.value = _playbackState.value.copy(
+                        queueIndex = idx,
+                        currentSong = newSong
+                    )
+                }
+            }
+            syncState()
+        }
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { syncState() }
         override fun onRepeatModeChanged(repeatMode: Int) { syncState() }
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            timber.log.Timber.e(error, "ExoPlayer playback error: ${error.message}")
+            syncState()
+        }
     }
 
     init {

@@ -3,6 +3,8 @@ package com.muhil.music.data.repository
 import com.muhil.music.data.local.dao.*
 import com.muhil.music.data.local.entity.*
 import com.muhil.music.data.mediastore.MediaStoreDataSource
+import com.muhil.music.data.remote.OnlineLyricsDataSource
+import com.muhil.music.data.remote.OnlineMusicDataSource
 import com.muhil.music.domain.model.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -12,60 +14,102 @@ import javax.inject.Singleton
 
 @Singleton
 class MusicRepository @Inject constructor(
+    private val onlineMusic: OnlineMusicDataSource,
+    private val onlineLyrics: OnlineLyricsDataSource,
     private val mediaStore: MediaStoreDataSource,
     private val favoriteDao: FavoriteDao,
     private val recentlyPlayedDao: RecentlyPlayedDao,
     private val playlistDao: PlaylistDao,
     private val lyricsDao: LyricsDao
 ) {
-    // ---- MediaStore ----
-    suspend fun getAllSongs(): List<Song> = mediaStore.getAllSongs()
-    suspend fun searchSongs(query: String): List<Song> = mediaStore.searchSongs(query)
 
-    suspend fun getAlbums(): List<Album> {
-        val songs = getAllSongs()
+    // ==========================================
+    // Online Music (Primary Source)
+    // ==========================================
+
+    suspend fun getFeaturedSongs(): List<Song> = onlineMusic.getFeaturedSongs()
+
+    suspend fun getGenreSongs(genre: String): List<Song> = onlineMusic.getGenreSongs(genre)
+
+    suspend fun searchOnlineSongs(query: String): List<Song> = onlineMusic.searchSongs(query)
+
+    suspend fun searchOnlineArtists(query: String): List<Artist> = onlineMusic.searchArtists(query)
+
+    suspend fun searchOnlineAlbums(query: String): List<Album> = onlineMusic.searchAlbums(query)
+
+    suspend fun getTopArtists(): List<Artist> = onlineMusic.getTopArtists()
+
+    suspend fun getTrendingAlbums(): List<Album> = onlineMusic.getTrendingAlbums()
+
+    // ==========================================
+    // Local Music (Secondary Device Source)
+    // ==========================================
+
+    suspend fun getLocalSongs(): List<Song> = mediaStore.getAllSongs()
+
+    suspend fun searchLocalSongs(query: String): List<Song> = mediaStore.searchSongs(query)
+
+    suspend fun getLocalAlbums(): List<Album> {
+        val songs = getLocalSongs()
         return songs.groupBy { it.album }.map { (albumName, albumSongs) ->
             Album(
                 id        = albumSongs.first().id,
                 title     = albumName,
                 artist    = albumSongs.first().artist,
                 artUri    = albumSongs.first().albumArtUri,
-                songCount = albumSongs.size
+                songCount = albumSongs.size,
+                isOnline  = false
             )
         }.sortedBy { it.title }
     }
 
-    suspend fun getArtists(): List<Artist> {
-        val songs = getAllSongs()
+    suspend fun getLocalArtists(): List<Artist> {
+        val songs = getLocalSongs()
         return songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
             Artist(
                 id         = artistSongs.first().id,
                 name       = artistName,
                 songCount  = artistSongs.size,
                 albumCount = artistSongs.map { it.album }.distinct().size,
-                artUri     = artistSongs.first().albumArtUri
+                artUri     = artistSongs.first().albumArtUri,
+                isOnline   = false
             )
         }.sortedBy { it.name }
     }
 
-    suspend fun getAlbumSongs(albumTitle: String): List<Song> =
-        getAllSongs().filter { it.album == albumTitle }.sortedBy { it.trackNumber }
+    // ==========================================
+    // Favorites
+    // ==========================================
 
-    suspend fun getArtistSongs(artistName: String): List<Song> =
-        getAllSongs().filter { it.artist == artistName }
-
-    // ---- Favorites ----
     fun getFavoriteSongIds(): Flow<List<Long>> =
         favoriteDao.getAllFavorites().map { list -> list.map { it.songId } }
 
+    fun getFavoriteSongs(): Flow<List<Song>> =
+        favoriteDao.getAllFavorites().map { list -> list.map { it.toSong() } }
+
     fun isFavorite(songId: Long): Flow<Boolean> = favoriteDao.isFavorite(songId)
 
-    suspend fun addFavorite(songId: Long) = favoriteDao.addFavorite(FavoriteEntity(songId))
+    suspend fun addFavorite(song: Song) {
+        favoriteDao.addFavorite(
+            FavoriteEntity(
+                songId      = song.id,
+                title       = song.title,
+                artist      = song.artist,
+                album       = song.album,
+                albumArtUri = song.albumArtUri,
+                uri         = song.uri,
+                duration    = song.duration,
+                isOnline    = song.isOnline
+            )
+        )
+    }
+
     suspend fun removeFavorite(songId: Long) = favoriteDao.removeFavorite(songId)
 
-    // getFavoriteSongs is handled in ViewModel via Flow collection
+    // ==========================================
+    // Recently Played
+    // ==========================================
 
-    // ---- Recently Played ----
     fun getRecentlyPlayed(): Flow<List<RecentlyPlayedEntity>> =
         recentlyPlayedDao.getRecentlyPlayed()
 
@@ -75,14 +119,20 @@ class MusicRepository @Inject constructor(
                 songId      = song.id,
                 title       = song.title,
                 artist      = song.artist,
+                album       = song.album,
                 albumArtUri = song.albumArtUri,
-                uri         = song.uri
+                uri         = song.uri,
+                duration    = song.duration,
+                isOnline    = song.isOnline
             )
         )
         recentlyPlayedDao.trimOld()
     }
 
-    // ---- Playlists ----
+    // ==========================================
+    // Playlists
+    // ==========================================
+
     fun getAllPlaylists(): Flow<List<PlaylistEntity>> = playlistDao.getAllPlaylists()
 
     suspend fun createPlaylist(name: String, userId: String? = null): String {
@@ -107,9 +157,11 @@ class MusicRepository @Inject constructor(
                 position    = position,
                 title       = song.title,
                 artist      = song.artist,
+                album       = song.album,
                 uri         = song.uri,
                 albumArtUri = song.albumArtUri,
-                duration    = song.duration
+                duration    = song.duration,
+                isOnline    = song.isOnline
             )
         )
     }
@@ -117,11 +169,41 @@ class MusicRepository @Inject constructor(
     suspend fun removeSongFromPlaylist(playlistId: String, songId: Long) =
         playlistDao.removeSongFromPlaylist(playlistId, songId)
 
-    // ---- Lyrics ----
-    suspend fun getCachedLyrics(songId: Long): CachedLyricsEntity? =
-        lyricsDao.getLyrics(songId)
+    // ==========================================
+    // Lyrics (LRCLIB + Local Cache)
+    // ==========================================
 
-    suspend fun cacheLyrics(songId: Long, text: String, isTimestamped: Boolean) {
-        lyricsDao.insertLyrics(CachedLyricsEntity(songId, text, isTimestamped))
+    suspend fun getLyrics(song: Song): LyricsState {
+        // 1. Check local cache first
+        val cached = lyricsDao.getLyrics(song.id)
+        if (cached != null) {
+            return if (cached.isTimestamped) {
+                val lines = onlineLyrics.parseLrc(cached.lyricsText)
+                if (lines.isNotEmpty()) LyricsState.Synced(lines) else LyricsState.Plain(cached.lyricsText)
+            } else {
+                LyricsState.Plain(cached.lyricsText)
+            }
+        }
+
+        // 2. Fetch from online lyrics provider (LRCLIB)
+        val onlineState = onlineLyrics.fetchLyrics(song.title, song.artist, song.duration)
+        if (onlineState is LyricsState.Synced) {
+            val raw = onlineState.lines.joinToString("\n") { "[${formatLrcTime(it.timestampMs)}]${it.text}" }
+            lyricsDao.insertLyrics(CachedLyricsEntity(song.id, raw, isTimestamped = true))
+            return onlineState
+        } else if (onlineState is LyricsState.Plain) {
+            lyricsDao.insertLyrics(CachedLyricsEntity(song.id, onlineState.text, isTimestamped = false))
+            return onlineState
+        }
+
+        return LyricsState.Unavailable
+    }
+
+    private fun formatLrcTime(ms: Long): String {
+        val totalSec = ms / 1000
+        val min = totalSec / 60
+        val sec = totalSec % 60
+        val centi = (ms % 1000) / 10
+        return "%02d:%02d.%02d".format(min, sec, centi)
     }
 }

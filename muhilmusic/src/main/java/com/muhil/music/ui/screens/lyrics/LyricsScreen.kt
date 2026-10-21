@@ -1,4 +1,4 @@
-﻿package com.muhil.music.ui.screens.lyrics
+package com.muhil.music.ui.screens.lyrics
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -88,7 +88,7 @@ fun LyricsScreen(
                                 tint = GoldPrimary.copy(alpha = 0.4f), modifier = Modifier.size(72.dp))
                             Spacer(Modifier.height(16.dp))
                             Text("No lyrics available", style = MaterialTheme.typography.titleMedium.copy(color = TextPrimary))
-                            Text("Place a .lrc file alongside your music file", style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
+                            Text("Lyrics could not be found for this song online", style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
                                 modifier = Modifier.padding(top = 8.dp), textAlign = TextAlign.Center)
                         }
                     }

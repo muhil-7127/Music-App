@@ -1,4 +1,4 @@
-﻿package com.muhil.music.data.repository
+package com.muhil.music.data.repository
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -15,7 +15,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 sealed class AuthResult {
-    data class Success(val user: FirebaseUser) : AuthResult()
+    data class Success(val user: FirebaseUser? = null) : AuthResult()
     data class Error(val message: String) : AuthResult()
     object Loading : AuthResult()
 }
@@ -64,12 +64,7 @@ class AuthRepository @Inject constructor(
         suspendCancellableCoroutine { cont ->
             auth.sendPasswordResetEmail(email)
                 .addOnSuccessListener {
-                    // Dummy user for success signal
-                    val user = auth.currentUser
-                    cont.resume(
-                        if (user != null) AuthResult.Success(user)
-                        else AuthResult.Error("Reset email sent")
-                    )
+                    cont.resume(AuthResult.Success(auth.currentUser))
                 }
                 .addOnFailureListener { e ->
                     cont.resume(AuthResult.Error(e.message ?: "Reset failed"))

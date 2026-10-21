@@ -101,11 +101,19 @@ fun NowPlayingScreen(
                         ),
                         maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        text = song?.artist ?: "—",
-                        style = MaterialTheme.typography.bodyLarge.copy(color = SilverMid),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = song?.artist ?: "—",
+                            style = MaterialTheme.typography.bodyLarge.copy(color = SilverMid),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (song?.isPreview == true) {
+                            Spacer(Modifier.width(8.dp))
+                            WebPreviewBadge()
+                        }
+                    }
                 }
                 IconButton(onClick = { song?.let { viewModel.toggleFavorite(it.id) } }) {
                     Icon(
