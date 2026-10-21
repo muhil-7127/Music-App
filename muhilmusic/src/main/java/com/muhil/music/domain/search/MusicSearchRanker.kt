@@ -14,20 +14,27 @@ enum class QueryIntent {
 }
 
 data class MovieSoundtrack(
-    val movieTitle: String,
-    val composerOrArtist: String,
+    val movieName: String,
+    val composer: String,
     val albumArtUri: String?,
     val tracks: List<Song>
-)
+) {
+    val movieTitle: String get() = movieName
+    val composerOrArtist: String get() = composer
+}
 
 data class RankedSearchResult(
     val topMatch: Song?,
     val movieSoundtrack: MovieSoundtrack?,
-    val songs: List<Song>,
-    val artists: List<Artist>,
-    val albums: List<Album>,
-    val detectedIntent: QueryIntent
-)
+    val rankedSongs: List<Song>,
+    val allSoundtracks: List<MovieSoundtrack> = emptyList(),
+    val artists: List<Artist> = emptyList(),
+    val albums: List<Album> = emptyList(),
+    val intent: QueryIntent = QueryIntent.GENERAL
+) {
+    val songs: List<Song> get() = rankedSongs
+    val detectedIntent: QueryIntent get() = intent
+}
 
 data class ScoredSong(
     val song: Song,
@@ -227,12 +234,28 @@ class MusicSearchRanker @Inject constructor() {
         return RankedSearchResult(
             topMatch = topMatch,
             movieSoundtrack = movieSoundtrack,
-            songs = rankedSongs,
+            rankedSongs = rankedSongs,
+            allSoundtracks = listOfNotNull(movieSoundtrack),
             artists = sortedArtists,
             albums = sortedAlbums,
-            detectedIntent = intent
+            intent = intent
         )
     }
+
+    /**
+     * Overload for direct query and songs ranking used in tests and simple searches.
+     */
+    fun rankSearchResults(
+        rawQuery: String,
+        songs: List<Song>,
+        preferredLanguage: String = "Tamil"
+    ): RankedSearchResult = rankSearchResults(
+        query = rawQuery,
+        candidates = songs,
+        artists = emptyList(),
+        albums = emptyList(),
+        preferredLanguage = preferredLanguage
+    )
 
     /**
      * Computes multi-tier relevance score for a song against the user query.
@@ -385,8 +408,8 @@ class MusicSearchRanker @Inject constructor() {
         return matchingGroup?.let { (albumName, tracks) ->
             if (tracks.size >= 2) {
                 MovieSoundtrack(
-                    movieTitle = tracks.first().album,
-                    composerOrArtist = tracks.first().artist,
+                    movieName = tracks.first().album.replace(Regex("(?i)original motion picture soundtrack|soundtrack|ost"), "").trim().ifEmpty { tracks.first().album },
+                    composer = tracks.first().artist,
                     albumArtUri = tracks.firstOrNull { !it.albumArtUri.isNullOrBlank() }?.albumArtUri,
                     tracks = tracks
                 )

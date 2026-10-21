@@ -10,6 +10,7 @@ import com.muhil.music.data.remote.OnlineMusicDataSource
 import com.muhil.music.domain.model.*
 import com.muhil.music.domain.recommendation.MusicRecommendationEngine
 import com.muhil.music.domain.recommendation.UserPreferenceProfile
+import com.muhil.music.domain.search.MovieSoundtrack
 import com.muhil.music.domain.search.MusicSearchRanker
 import com.muhil.music.domain.search.QueryIntent
 import com.muhil.music.domain.search.RankedSearchResult
@@ -57,7 +58,7 @@ class MusicRepository @Inject constructor(
     private val recommendationsCache = ConcurrentHashMap<Long, CacheEntry<List<Song>>>()
 
     private var tamilHitsCache: CacheEntry<List<Song>>? = null
-    private var tamilSoundtracksCache: CacheEntry<List<Album>>? = null
+    private var tamilSoundtracksCache: CacheEntry<List<MovieSoundtrack>>? = null
     private var tamilClassicsCache: CacheEntry<List<Song>>? = null
     private var tamilMelodiesCache: CacheEntry<List<Song>>? = null
 
@@ -261,19 +262,28 @@ class MusicRepository @Inject constructor(
         all
     }
 
-    suspend fun getTamilSoundtracks(forceRefresh: Boolean = false): List<Album> = coroutineScope {
+    suspend fun getTamilSoundtracks(forceRefresh: Boolean = false): List<MovieSoundtrack> = coroutineScope {
         if (!forceRefresh) {
             tamilSoundtracksCache?.let { if (it.isValid(ttlMetaMs)) return@coroutineScope it.data }
         }
         val queries = listOf("Leo Soundtrack", "Vikram Soundtrack", "Jailer Soundtrack", "Ponniyin Selvan", "Master Tamil")
         val deferreds = queries.map { q -> async { onlineMusic.searchAlbums(q, limit = 5, country = "IN") } }
-        val all = mutableListOf<Album>()
+        val all = mutableListOf<MovieSoundtrack>()
         val seen = mutableSetOf<String>()
         for (d in deferreds) {
             val list = try { d.await() } catch (_: Exception) { emptyList() }
             for (a in list) {
                 val key = a.title.trim().lowercase()
-                if (seen.add(key)) all.add(a)
+                if (seen.add(key)) {
+                    all.add(
+                        MovieSoundtrack(
+                            movieName = a.title.replace(Regex("(?i)original motion picture soundtrack|soundtrack|ost"), "").trim().ifEmpty { a.title },
+                            composer = a.artist,
+                            albumArtUri = a.artworkUri,
+                            tracks = emptyList()
+                        )
+                    )
+                }
             }
         }
         if (all.isNotEmpty()) {
@@ -324,7 +334,7 @@ class MusicRepository @Inject constructor(
         all
     }
 
-    fun getTamilArtists(): List<Artist> {
+    fun getTamilArtists(forceRefresh: Boolean = false): List<Artist> {
         return listOf(
             Artist(id = 543888365L, name = "Anirudh Ravichander", songCount = 85, albumCount = 20, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/d1/aa/22/d1aa223d-249d-6490-25fc-8ea736dd6313/190296767357.jpg/600x600bb.jpg", isOnline = true),
             Artist(id = 49669528L, name = "A.R. Rahman", songCount = 120, albumCount = 45, artUri = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c9/a1/38/c9a13809-53e7-2b36-efd3-90d56569165b/886443685608.jpg/600x600bb.jpg", isOnline = true),
@@ -492,6 +502,20 @@ class MusicRepository @Inject constructor(
     }
 
     suspend fun removeFavorite(songId: Long) = favoriteDao.removeFavorite(songId)
+
+    // ==========================================
+    // User Preferences & Listening Signals
+    // ==========================================
+
+    val preferredLanguage: Flow<String> get() = userPreferencesManager.preferredLanguage
+    val searchHistory: Flow<List<String>> get() = userPreferencesManager.searchHistory
+
+    suspend fun setPreferredLanguage(lang: String) = userPreferencesManager.setPreferredLanguage(lang)
+    suspend fun saveSearchQuery(query: String) = userPreferencesManager.saveSearchQuery(query)
+    suspend fun removeSearchQuery(query: String) = userPreferencesManager.removeSearchQuery(query)
+    suspend fun clearSearchHistory() = userPreferencesManager.clearSearchHistory()
+    suspend fun recordSongSkipped(songId: Long) = userPreferencesManager.recordSongSkipped(songId)
+    suspend fun recordSongPlayed(songId: Long) = userPreferencesManager.recordSongPlayed(songId)
 
     // ==========================================
     // Recently Played
