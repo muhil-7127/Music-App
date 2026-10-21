@@ -1,4 +1,4 @@
-﻿package com.muhil.music.ui.screens.playlists
+package com.muhil.music.ui.screens.playlists
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -90,7 +90,7 @@ fun PlaylistsScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-                items(playlists) { playlist ->
+                items(playlists, key = { it.id }) { playlist ->
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .clickable { /* TODO: open playlist */ }

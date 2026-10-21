@@ -36,19 +36,19 @@ fun AlbumArtImage(
             .background(BgCard),
         contentAlignment = Alignment.Center
     ) {
+        // Immediate subtle placeholder so view is never blank
+        Icon(
+            imageVector = Icons.Rounded.MusicNote,
+            contentDescription = null,
+            tint = GoldPrimary.copy(alpha = 0.3f),
+            modifier = Modifier.size(28.dp)
+        )
         if (!uri.isNullOrBlank()) {
             AsyncImage(
                 model = uri,
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Rounded.MusicNote,
-                contentDescription = null,
-                tint = GoldPrimary.copy(alpha = 0.5f),
-                modifier = Modifier.size(36.dp)
             )
         }
     }

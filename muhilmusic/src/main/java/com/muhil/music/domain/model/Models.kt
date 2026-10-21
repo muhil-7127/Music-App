@@ -80,7 +80,9 @@ data class PlaybackState(
     val queue: List<Song> = emptyList(),
     val queueIndex: Int = 0,
     val shuffleEnabled: Boolean = false,
-    val repeatMode: RepeatMode = RepeatMode.OFF
+    val repeatMode: RepeatMode = RepeatMode.OFF,
+    val isBuffering: Boolean = false,
+    val errorMessage: String? = null
 )
 
 enum class RepeatMode { OFF, ALL, ONE }

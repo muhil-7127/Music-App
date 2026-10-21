@@ -21,8 +21,8 @@ class AudiusMusicDataSource @Inject constructor() {
     private val appName = "MuhilMusic"
     private val userAgent = "MuhilMusic/1.0 (Android)"
     private val baseUrl = "https://api.audius.co"
-    private val connectTimeoutMs = 12000
-    private val readTimeoutMs = 15000
+    private val connectTimeoutMs = 7000
+    private val readTimeoutMs = 8000
 
     /**
      * Search full-length tracks on Audius.

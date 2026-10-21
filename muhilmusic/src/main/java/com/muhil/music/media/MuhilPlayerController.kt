@@ -32,6 +32,8 @@ class MuhilPlayerController @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var controller: MediaController? = null
 
+    private var pendingAction: (() -> Unit)? = null
+
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) { syncState() }
         override fun onIsPlayingChanged(isPlaying: Boolean) { syncState() }
@@ -43,7 +45,8 @@ class MuhilPlayerController @Inject constructor(
                 if (newSong != null) {
                     _playbackState.value = _playbackState.value.copy(
                         queueIndex = idx,
-                        currentSong = newSong
+                        currentSong = newSong,
+                        errorMessage = null
                     )
                 }
             }
@@ -53,6 +56,10 @@ class MuhilPlayerController @Inject constructor(
         override fun onRepeatModeChanged(repeatMode: Int) { syncState() }
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             timber.log.Timber.e(error, "ExoPlayer playback error: ${error.message}")
+            _playbackState.value = _playbackState.value.copy(
+                isBuffering = false,
+                errorMessage = "Playback failed: ${error.localizedMessage ?: "Network or stream issue"}"
+            )
             syncState()
         }
     }
@@ -80,8 +87,10 @@ class MuhilPlayerController @Inject constructor(
                 controller = future.get()
                 controller?.addListener(playerListener)
                 syncState()
+                pendingAction?.invoke()
+                pendingAction = null
             } catch (e: Exception) {
-                // Service not yet started
+                // Service not yet ready
             }
         }, MoreExecutors.directExecutor())
     }
@@ -96,27 +105,58 @@ class MuhilPlayerController @Inject constructor(
             Player.REPEAT_MODE_ALL -> RepeatMode.ALL
             else -> RepeatMode.OFF
         }
+        val isBuffering = c.playbackState == Player.STATE_BUFFERING
         _playbackState.value = current.copy(
-            isPlaying   = c.isPlaying,
-            positionMs  = position,
-            durationMs  = duration,
-            progress    = if (duration > 0) position.toFloat() / duration else 0f,
+            isPlaying      = c.isPlaying,
+            isBuffering    = isBuffering,
+            positionMs     = position,
+            durationMs     = duration,
+            progress       = if (duration > 0) position.toFloat() / duration else 0f,
             shuffleEnabled = c.shuffleModeEnabled,
-            repeatMode  = repeatMode
+            repeatMode     = repeatMode
         )
     }
 
     fun playSongs(songs: List<Song>, startIndex: Int = 0) {
-        val c = controller ?: run { connectToService(); return }
+        val c = controller
+        if (c == null) {
+            pendingAction = { playSongs(songs, startIndex) }
+            connectToService()
+            return
+        }
         val items = songs.map { it.toMediaItem() }
         c.setMediaItems(items, startIndex, 0L)
         c.prepare()
         c.play()
         _playbackState.value = _playbackState.value.copy(
-            queue      = songs,
-            queueIndex = startIndex,
-            currentSong = songs.getOrNull(startIndex)
+            queue        = songs,
+            queueIndex   = startIndex,
+            currentSong  = songs.getOrNull(startIndex),
+            errorMessage = null,
+            isBuffering  = true
         )
+    }
+
+    fun addToQueue(song: Song) {
+        val c = controller
+        val currentQueue = _playbackState.value.queue
+        if (currentQueue.any { it.id == song.id }) return // Already in queue
+
+        val newQueue = currentQueue + song
+        _playbackState.value = _playbackState.value.copy(queue = newQueue)
+        c?.addMediaItem(song.toMediaItem())
+    }
+
+    fun addToQueue(songs: List<Song>) {
+        val c = controller
+        val currentQueue = _playbackState.value.queue
+        val existingIds = currentQueue.map { it.id }.toSet()
+        val toAdd = songs.filter { it.id !in existingIds }
+        if (toAdd.isEmpty()) return
+
+        val newQueue = currentQueue + toAdd
+        _playbackState.value = _playbackState.value.copy(queue = newQueue)
+        toAdd.forEach { c?.addMediaItem(it.toMediaItem()) }
     }
 
     fun togglePlayPause() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }

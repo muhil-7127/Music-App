@@ -83,13 +83,23 @@ fun LyricsScreen(
                 }
                 is LyricsState.Unavailable -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                             Icon(Icons.Rounded.MusicOff, contentDescription = null,
                                 tint = GoldPrimary.copy(alpha = 0.4f), modifier = Modifier.size(72.dp))
                             Spacer(Modifier.height(16.dp))
                             Text("No lyrics available", style = MaterialTheme.typography.titleMedium.copy(color = TextPrimary))
-                            Text("Lyrics could not be found for this song online", style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
+                            Text("Lyrics could not be found or connection timed out", style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary),
                                 modifier = Modifier.padding(top = 8.dp), textAlign = TextAlign.Center)
+                            Spacer(Modifier.height(16.dp))
+                            OutlinedButton(
+                                onClick = { song?.let { lyricsViewModel.loadLyrics(it) } },
+                                border = BorderStroke(1.dp, GoldPrimary),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = GoldPrimary)
+                            ) {
+                                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Retry Lyrics")
+                            }
                         }
                     }
                 }

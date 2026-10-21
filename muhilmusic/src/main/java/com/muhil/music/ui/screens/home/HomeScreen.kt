@@ -136,7 +136,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(uiState.genreSongs) { song ->
+                            items(uiState.genreSongs, key = { it.id }) { song ->
                                 FeaturedSongCard(
                                     song = song,
                                     isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
@@ -158,19 +158,13 @@ fun HomeScreen(
                 }
 
                 if (uiState.isLoading && uiState.featuredSongs.isEmpty()) {
+                    item { HomeLoadingSkeleton() }
+                } else if (uiState.error != null && uiState.featuredSongs.isEmpty()) {
                     item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator(color = GoldPrimary, modifier = Modifier.size(36.dp))
-                                Spacer(Modifier.height(10.dp))
-                                Text("Discovering web music...", style = MaterialTheme.typography.bodySmall.copy(color = SilverMid))
-                            }
-                        }
+                        HomeErrorBanner(
+                            message = uiState.error ?: "Unable to load online tracks. Check network.",
+                            onRetry = { viewModel.loadHomeContent(forceRefresh = true) }
+                        )
                     }
                 } else if (uiState.featuredSongs.isNotEmpty()) {
                     item {
@@ -178,12 +172,38 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(uiState.featuredSongs) { song ->
+                            items(uiState.featuredSongs, key = { it.id }) { song ->
                                 FeaturedSongCard(
                                     song = song,
                                     isPlaying = playbackState.currentSong?.id == song.id && playbackState.isPlaying,
                                     onClick = {
                                         viewModel.playSong(song)
+                                        navController.navigate(Screen.NowPlaying.route)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 6b. Intelligent Similar-Song Recommendations ("Similar Vibes" / "Made For You")
+                if (uiState.recommendations.isNotEmpty()) {
+                    val seedTitle = uiState.recommendationSeed?.title
+                    val recHeading = if (!seedTitle.isNullOrBlank()) "Similar Vibes • Because of $seedTitle" else "Made For You"
+                    item {
+                        SectionHeader(recHeading) {}
+                    }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(uiState.recommendations, key = { it.id }) { recSong ->
+                                FeaturedSongCard(
+                                    song = recSong,
+                                    isPlaying = playbackState.currentSong?.id == recSong.id && playbackState.isPlaying,
+                                    onClick = {
+                                        viewModel.playSong(recSong)
                                         navController.navigate(Screen.NowPlaying.route)
                                     }
                                 )
@@ -202,7 +222,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(uiState.topArtists) { artist ->
+                            items(uiState.topArtists, key = { it.id }) { artist ->
                                 ArtistCircleCard(
                                     artist = artist,
                                     onClick = {
@@ -225,7 +245,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(uiState.trendingAlbums) { album ->
+                            items(uiState.trendingAlbums, key = { it.id }) { album ->
                                 AlbumSquareCard(
                                     album = album,
                                     onClick = {
@@ -248,7 +268,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(uiState.recentlyPlayed.take(8)) { recent ->
+                            items(uiState.recentlyPlayed.take(8), key = { it.songId }) { recent ->
                                 MiniSongCard(
                                     title = recent.title,
                                     artist = recent.artist,
@@ -273,7 +293,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(uiState.favoriteSongs.take(8)) { song ->
+                            items(uiState.favoriteSongs.take(8), key = { it.id }) { song ->
                                 MiniSongCard(
                                     title = song.title,
                                     artist = song.artist,
@@ -509,6 +529,85 @@ fun FloatingSearchBar(onClick: () -> Unit) {
                 "Search web songs, artists, albums...",
                 style = MaterialTheme.typography.bodyMedium.copy(color = TextTertiary)
             )
+        }
+    }
+}
+
+@Composable
+fun HomeLoadingSkeleton() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        repeat(3) {
+            Column(modifier = Modifier.width(160.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(160.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(BgCard),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = GoldPrimary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(28.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BgCard)
+                )
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .width(80.dp)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BgCard)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeErrorBanner(message: String, onRetry: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = BgCard,
+        border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Rounded.CloudOff,
+                contentDescription = null,
+                tint = GoldPrimary,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Connection Issue",
+                    style = MaterialTheme.typography.titleSmall.copy(color = TextPrimary, fontWeight = FontWeight.Bold)
+                )
+                Text(message, style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary))
+            }
+            TextButton(onClick = onRetry) {
+                Text("Retry", style = MaterialTheme.typography.labelLarge.copy(color = GoldPrimary, fontWeight = FontWeight.Bold))
+            }
         }
     }
 }

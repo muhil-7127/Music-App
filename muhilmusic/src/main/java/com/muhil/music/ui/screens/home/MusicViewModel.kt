@@ -20,6 +20,9 @@ data class MusicUiState(
     val selectedGenre: String = "All",
     val topArtists: List<Artist> = emptyList(),
     val trendingAlbums: List<Album> = emptyList(),
+    val recommendations: List<Song> = emptyList(),
+    val recommendationSeed: Song? = null,
+    val isRecommendationsLoading: Boolean = false,
     val localSongs: List<Song> = emptyList(),
     val localAlbums: List<Album> = emptyList(),
     val localArtists: List<Artist> = emptyList(),
@@ -30,6 +33,7 @@ data class MusicUiState(
     val searchArtists: List<Artist> = emptyList(),
     val searchAlbums: List<Album> = emptyList(),
     val isSearching: Boolean = false,
+    val searchError: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
     val hasPermission: Boolean = false
@@ -51,10 +55,12 @@ class MusicViewModel @Inject constructor(
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
 
     private var searchJob: Job? = null
+    private var recommendationsJob: Job? = null
 
     init {
         observeFavorites()
         observeRecentlyPlayed()
+        observePlaybackForRecommendations()
         loadHomeContent()
     }
 
@@ -79,34 +85,88 @@ class MusicViewModel @Inject constructor(
         }
     }
 
+    private fun observePlaybackForRecommendations() {
+        viewModelScope.launch {
+            playerController.playbackState
+                .map { it.currentSong }
+                .distinctUntilChanged()
+                .collect { song ->
+                    if (song != null) {
+                        loadRecommendations(song)
+                    }
+                }
+        }
+    }
+
     /**
-     * Primary online music discovery: loads featured songs, top artists, and trending albums from web.
+     * Primary online music discovery: loads featured songs, top artists, and trending albums concurrently.
      */
-    fun loadHomeContent() {
+    fun loadHomeContent(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val featured = repository.getFeaturedSongs()
-                val artists = repository.getTopArtists()
-                val albums = repository.getTrendingAlbums()
+                kotlinx.coroutines.coroutineScope {
+                    val featuredDef = kotlinx.coroutines.async { repository.getFeaturedSongs(forceRefresh) }
+                    val artistsDef = kotlinx.coroutines.async { repository.getTopArtists(forceRefresh) }
+                    val albumsDef = kotlinx.coroutines.async { repository.getTrendingAlbums(forceRefresh) }
 
-                _uiState.update {
-                    it.copy(
-                        featuredSongs = featured,
-                        topArtists = artists,
-                        trendingAlbums = albums,
-                        isLoading = false
-                    )
+                    val featured = featuredDef.await()
+                    val artists = artistsDef.await()
+                    val albums = albumsDef.await()
+
+                    _uiState.update {
+                        it.copy(
+                            featuredSongs = featured,
+                            topArtists = artists,
+                            trendingAlbums = albums,
+                            isLoading = false,
+                            error = if (featured.isEmpty() && it.localSongs.isEmpty()) "Unable to reach music servers. Tap retry." else null
+                        )
+                    }
+
+                    // Seed recommendations with top track if no seed exists yet
+                    if (_uiState.value.recommendationSeed == null && featured.isNotEmpty()) {
+                        loadRecommendations(featured.first())
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error loading online home content")
-                _uiState.update { it.copy(isLoading = false, error = "Failed to load online music. Check connection.") }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = if (it.featuredSongs.isEmpty() && it.localSongs.isEmpty()) "Failed to load online music. Check connection." else null
+                    )
+                }
             }
         }
     }
 
     /**
-     * Select genre chip: queries online songs by genre/mood.
+     * Load intelligent recommendations based on a seed song.
+     */
+    fun loadRecommendations(seed: Song) {
+        if (_uiState.value.recommendationSeed?.id == seed.id && _uiState.value.recommendations.isNotEmpty()) return
+
+        recommendationsJob?.cancel()
+        recommendationsJob = viewModelScope.launch {
+            _uiState.update { it.copy(isRecommendationsLoading = true, recommendationSeed = seed) }
+            try {
+                val recs = repository.getRecommendations(seed, limit = 15)
+                _uiState.update {
+                    it.copy(
+                        recommendations = recs,
+                        isRecommendationsLoading = false
+                    )
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading recommendations for ${seed.title}")
+                _uiState.update { it.copy(isRecommendationsLoading = false) }
+            }
+        }
+    }
+
+    /**
+     * Select genre chip: queries online songs by genre/mood with in-memory caching.
      */
     fun selectGenre(genre: String) {
         if (_uiState.value.selectedGenre == genre && _uiState.value.genreSongs.isNotEmpty()) return
@@ -123,7 +183,7 @@ class MusicViewModel @Inject constructor(
     }
 
     /**
-     * Real-time web music search with debouncing.
+     * Real-time web music search with debouncing, request cancellation, and parallel calls.
      */
     fun search(query: String) {
         searchJob?.cancel()
@@ -133,31 +193,39 @@ class MusicViewModel @Inject constructor(
                     searchResults = emptyList(),
                     searchArtists = emptyList(),
                     searchAlbums = emptyList(),
-                    isSearching = false
+                    isSearching = false,
+                    searchError = null
                 )
             }
             return
         }
 
         searchJob = viewModelScope.launch {
-            delay(350)
-            _uiState.update { it.copy(isSearching = true) }
+            delay(300)
+            _uiState.update { it.copy(isSearching = true, searchError = null) }
             try {
-                val songs = repository.searchOnlineSongs(query)
-                val artists = repository.searchOnlineArtists(query)
-                val albums = repository.searchOnlineAlbums(query)
+                kotlinx.coroutines.coroutineScope {
+                    val songsDef = kotlinx.coroutines.async { repository.searchOnlineSongs(query) }
+                    val artistsDef = kotlinx.coroutines.async { repository.searchOnlineArtists(query) }
+                    val albumsDef = kotlinx.coroutines.async { repository.searchOnlineAlbums(query) }
 
-                _uiState.update {
-                    it.copy(
-                        searchResults = songs,
-                        searchArtists = artists,
-                        searchAlbums = albums,
-                        isSearching = false
-                    )
+                    val songs = songsDef.await()
+                    val artists = artistsDef.await()
+                    val albums = albumsDef.await()
+
+                    _uiState.update {
+                        it.copy(
+                            searchResults = songs,
+                            searchArtists = artists,
+                            searchAlbums = albums,
+                            isSearching = false,
+                            searchError = null
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error during web search")
-                _uiState.update { it.copy(isSearching = false) }
+                _uiState.update { it.copy(isSearching = false, searchError = "Search failed. Check your connection.") }
             }
         }
     }
@@ -242,6 +310,14 @@ class MusicViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun addToQueue(song: Song) {
+        playerController.addToQueue(song)
+    }
+
+    fun addToQueue(songs: List<Song>) {
+        playerController.addToQueue(songs)
     }
 
     fun getFavoriteSongs(): List<Song> = _uiState.value.favoriteSongs

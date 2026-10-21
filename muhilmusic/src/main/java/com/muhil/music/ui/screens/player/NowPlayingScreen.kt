@@ -24,6 +24,7 @@ import com.muhil.music.ui.navigation.Screen
 import com.muhil.music.ui.screens.home.MusicViewModel
 import com.muhil.music.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingScreen(
     viewModel: MusicViewModel = hiltViewModel(),
@@ -32,6 +33,7 @@ fun NowPlayingScreen(
     val uiState by viewModel.uiState.collectAsState()
     val playback by viewModel.playbackState.collectAsState()
     val song = playback.currentSong
+    var showQueueSheet by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -86,7 +88,25 @@ fun NowPlayingScreen(
                 )
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(28.dp))
+
+            // Playback Error Banner if present
+            if (playback.errorMessage != null) {
+                Surface(
+                    color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                    border = BorderStroke(0.5.dp, Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                ) {
+                    Text(
+                        text = playback.errorMessage ?: "Stream issue",
+                        style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFFCA5A5)),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
 
             // Song info + Favorite
             Row(
@@ -129,7 +149,7 @@ fun NowPlayingScreen(
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
 
             // Progress bar
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -171,7 +191,7 @@ fun NowPlayingScreen(
                     Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous",
                         tint = SilverLight, modifier = Modifier.size(36.dp))
                 }
-                // Play/Pause
+                // Play/Pause with Buffering indicator
                 Box(
                     modifier = Modifier
                         .size(72.dp)
@@ -182,12 +202,20 @@ fun NowPlayingScreen(
                         .clickable { viewModel.togglePlayPause() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (playback.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = BgBlack,
-                        modifier = Modifier.size(38.dp)
-                    )
+                    if (playback.isBuffering) {
+                        CircularProgressIndicator(
+                            color = BgBlack,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (playback.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = BgBlack,
+                            modifier = Modifier.size(38.dp)
+                        )
+                    }
                 }
                 // Next
                 IconButton(onClick = viewModel::next, modifier = Modifier.size(56.dp)) {
@@ -213,11 +241,105 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // Queue button
-            TextButton(onClick = { /* TODO: Show queue */ }) {
+            // Queue and Similar Vibes button
+            TextButton(onClick = { showQueueSheet = true }) {
                 Icon(Icons.Rounded.QueueMusic, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Queue", style = MaterialTheme.typography.labelLarge.copy(color = GoldPrimary))
+                Text("Queue & Similar Vibes", style = MaterialTheme.typography.labelLarge.copy(color = GoldPrimary))
+            }
+        }
+
+        // Modal Bottom Sheet for Queue & Recommendations
+        if (showQueueSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showQueueSheet = false },
+                containerColor = BgElevated,
+                dragHandle = { BottomSheetDefaults.DragHandle(color = GoldPrimary.copy(alpha = 0.5f)) }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 32.dp)
+                ) {
+                    Text(
+                        "Playing Queue (${playback.queue.size})",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TextPrimary),
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                    ) {
+                        items(playback.queue, key = { it.id }) { qSong ->
+                            val isCurrent = qSong.id == playback.currentSong?.id
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isCurrent) GoldPrimary.copy(alpha = 0.15f) else Color.Transparent)
+                                    .clickable { viewModel.playSong(qSong) }
+                                    .padding(vertical = 8.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AlbumArtImage(uri = qSong.albumArtUri, modifier = Modifier.size(40.dp), cornerRadius = 6.dp)
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        qSong.title,
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            color = if (isCurrent) GoldLight else TextPrimary,
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(qSong.artist, style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary), maxLines = 1)
+                                }
+                                if (isCurrent) {
+                                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(18.dp))
+
+                    if (uiState.recommendations.isNotEmpty()) {
+                        Text(
+                            "Similar Vibes (Recommended Next)",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TextPrimary),
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                        ) {
+                            items(uiState.recommendations, key = { it.id }) { recSong ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.playSong(recSong) }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AlbumArtImage(uri = recSong.albumArtUri, modifier = Modifier.size(40.dp), cornerRadius = 6.dp)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(recSong.title, style = MaterialTheme.typography.labelMedium.copy(color = TextPrimary), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(recSong.artist, style = MaterialTheme.typography.labelSmall.copy(color = TextTertiary), maxLines = 1)
+                                    }
+                                    IconButton(onClick = { viewModel.addToQueue(recSong) }) {
+                                        Icon(Icons.Rounded.Add, contentDescription = "Add to Queue", tint = GoldPrimary, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

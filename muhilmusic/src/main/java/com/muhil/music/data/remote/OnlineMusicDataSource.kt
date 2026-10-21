@@ -19,8 +19,8 @@ import javax.inject.Singleton
 class OnlineMusicDataSource @Inject constructor() {
 
     private val userAgent = "MuhilMusic/1.0 (Android)"
-    private val connectTimeoutMs = 12000
-    private val readTimeoutMs = 15000
+    private val connectTimeoutMs = 7000
+    private val readTimeoutMs = 8000
 
     /**
      * Search songs by title, artist, or album on the web (iTunes Search API).
@@ -74,21 +74,23 @@ class OnlineMusicDataSource @Inject constructor() {
      * Discover featured/trending songs across top global charts.
      */
     suspend fun getFeaturedSongs(): List<Song> = withContext(Dispatchers.IO) {
-        val trendingQueries = listOf("Top Hits 2024", "Taylor Swift", "The Weeknd", "Coldplay", "Billie Eilish", "A.R. Rahman")
-        val allResults = mutableListOf<Song>()
-        val seenIds = mutableSetOf<Long>()
-
-        for (term in trendingQueries) {
-            val songs = searchSongs(term, limit = 8)
-            for (song in songs) {
-                if (song.id !in seenIds) {
-                    seenIds.add(song.id)
-                    allResults.add(song)
+        val trendingQueries = listOf("Top Hits 2024", "Taylor Swift", "The Weeknd", "Coldplay", "A.R. Rahman")
+        kotlinx.coroutines.coroutineScope {
+            val deferreds = trendingQueries.map { term ->
+                kotlinx.coroutines.async { searchSongs(term, limit = 6) }
+            }
+            val allResults = mutableListOf<Song>()
+            val seenIds = mutableSetOf<Long>()
+            for (d in deferreds) {
+                val list = try { d.await() } catch (e: Exception) { emptyList() }
+                for (song in list) {
+                    if (seenIds.add(song.id)) {
+                        allResults.add(song)
+                    }
                 }
             }
-            if (allResults.size >= 30) break
+            allResults
         }
-        allResults
     }
 
     /**

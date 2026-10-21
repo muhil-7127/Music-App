@@ -52,7 +52,7 @@ fun AllSongsScreen(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            items(uiState.allSongs) { song ->
+            items(uiState.allSongs, key = { it.id }) { song ->
                 SongListItem(
                     song = song,
                     isFavorite = song.id in uiState.favoriteSongIds,
@@ -87,7 +87,7 @@ fun AlbumsScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(uiState.albums) { album ->
+            items(uiState.albums, key = { it.id }) { album ->
                 AlbumCard(
                     title = album.title,
                     artist = album.artist,
@@ -140,7 +140,7 @@ fun ArtistsScreen(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            items(uiState.artists) { artist ->
+            items(uiState.artists, key = { it.id }) { artist ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -190,7 +190,7 @@ fun FavoritesScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-                items(favSongs) { song ->
+                items(favSongs, key = { it.id }) { song ->
                     SongListItem(
                         song = song, isFavorite = true,
                         isPlaying = playback.currentSong?.id == song.id && playback.isPlaying,
@@ -217,7 +217,7 @@ fun RecentlyPlayedScreen(
         topBar = { MuhilTopBar(title = "Recently Played", onBack = { navController.popBackStack() }) }
     ) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-            items(uiState.recentlyPlayed) { recent ->
+            items(uiState.recentlyPlayed, key = { it.songId }) { recent ->
                 val song = uiState.allSongs.find { it.id == recent.songId } ?: recent.toSong()
                 Row(
                     modifier = Modifier

@@ -7,11 +7,15 @@ import com.muhil.music.data.remote.AudiusMusicDataSource
 import com.muhil.music.data.remote.OnlineLyricsDataSource
 import com.muhil.music.data.remote.OnlineMusicDataSource
 import com.muhil.music.domain.model.*
+import com.muhil.music.domain.recommendation.MusicRecommendationEngine
+import com.muhil.music.domain.recommendation.UserPreferenceProfile
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,14 +28,42 @@ class MusicRepository @Inject constructor(
     private val favoriteDao: FavoriteDao,
     private val recentlyPlayedDao: RecentlyPlayedDao,
     private val playlistDao: PlaylistDao,
-    private val lyricsDao: LyricsDao
+    private val lyricsDao: LyricsDao,
+    private val recommendationEngine: MusicRecommendationEngine
 ) {
+
+    // ==========================================
+    // In-Memory Caching with TTL for Instant Loading
+    // ==========================================
+
+    private class CacheEntry<T>(val data: T, val timestamp: Long = System.currentTimeMillis()) {
+        fun isValid(ttlMs: Long): Boolean = (System.currentTimeMillis() - timestamp) < ttlMs
+    }
+
+    private var featuredCache: CacheEntry<List<Song>>? = null
+    private val genreCache = ConcurrentHashMap<String, CacheEntry<List<Song>>>()
+    private var artistsCache: CacheEntry<List<Artist>>? = null
+    private var albumsCache: CacheEntry<List<Album>>? = null
+    private val searchSongsCache = ConcurrentHashMap<String, CacheEntry<List<Song>>>()
+    private val searchArtistsCache = ConcurrentHashMap<String, CacheEntry<List<Artist>>>()
+    private val searchAlbumsCache = ConcurrentHashMap<String, CacheEntry<List<Album>>>()
+    private val recommendationsCache = ConcurrentHashMap<Long, CacheEntry<List<Song>>>()
+
+    private val ttlFeaturedMs = 10 * 60 * 1000L // 10 minutes
+    private val ttlGenreMs = 10 * 60 * 1000L
+    private val ttlMetaMs = 15 * 60 * 1000L
+    private val ttlSearchMs = 5 * 60 * 1000L
+    private val ttlRecommendationsMs = 10 * 60 * 1000L
 
     // ==========================================
     // Online Music (Primary Source: Audius Full Tracks + iTunes Fallback)
     // ==========================================
 
-    suspend fun getFeaturedSongs(): List<Song> = coroutineScope {
+    suspend fun getFeaturedSongs(forceRefresh: Boolean = false): List<Song> = coroutineScope {
+        if (!forceRefresh) {
+            featuredCache?.let { if (it.isValid(ttlFeaturedMs)) return@coroutineScope it.data }
+        }
+
         val audiusDeferred = async { audiusMusic.getTrendingTracks(limit = 25) }
         val itunesDeferred = async { onlineMusic.getFeaturedSongs() }
 
@@ -51,10 +83,29 @@ class MusicRepository @Inject constructor(
             val key = normalizeKey(song.title, song.artist)
             if (seen.add(key)) combined.add(song)
         }
+
+        // Offline / Network Failure Fallback: use database favorites and recents to prevent blank screen
+        if (combined.isEmpty()) {
+            val recent = try { recentlyPlayedDao.getRecentlyPlayed().first().map { it.toSong() } } catch (e: Exception) { emptyList() }
+            val favorites = try { favoriteDao.getAllFavorites().first().map { it.toSong() } } catch (e: Exception) { emptyList() }
+            val fallback = (recent + favorites).distinctBy { normalizeKey(it.title, it.artist) }
+            if (fallback.isNotEmpty()) {
+                return@coroutineScope fallback
+            }
+        }
+
+        if (combined.isNotEmpty()) {
+            featuredCache = CacheEntry(combined)
+        }
         combined
     }
 
-    suspend fun getGenreSongs(genre: String): List<Song> = coroutineScope {
+    suspend fun getGenreSongs(genre: String, forceRefresh: Boolean = false): List<Song> = coroutineScope {
+        val cacheKey = genre.lowercase().trim()
+        if (!forceRefresh) {
+            genreCache[cacheKey]?.let { if (it.isValid(ttlGenreMs)) return@coroutineScope it.data }
+        }
+
         val audiusDeferred = async { audiusMusic.getTrendingTracksByGenre(genre, limit = 25) }
         val itunesDeferred = async { onlineMusic.getGenreSongs(genre) }
 
@@ -72,11 +123,19 @@ class MusicRepository @Inject constructor(
             val key = normalizeKey(song.title, song.artist)
             if (seen.add(key)) combined.add(song)
         }
+
+        if (combined.isNotEmpty()) {
+            genreCache[cacheKey] = CacheEntry(combined)
+        }
         combined
     }
 
     suspend fun searchOnlineSongs(query: String): List<Song> = coroutineScope {
-        if (query.isBlank()) return@coroutineScope emptyList()
+        val cleanQuery = query.trim().lowercase()
+        if (cleanQuery.isBlank()) return@coroutineScope emptyList()
+
+        searchSongsCache[cleanQuery]?.let { if (it.isValid(ttlSearchMs)) return@coroutineScope it.data }
+
         val audiusDeferred = async { audiusMusic.searchSongs(query, limit = 30) }
         val itunesDeferred = async { onlineMusic.searchSongs(query, limit = 30) }
 
@@ -86,21 +145,27 @@ class MusicRepository @Inject constructor(
         val seen = mutableSetOf<String>()
         val combined = mutableListOf<Song>()
 
-        // Full-length Audius tracks take priority
         for (song in audiusTracks) {
             val key = normalizeKey(song.title, song.artist)
             if (seen.add(key)) combined.add(song)
         }
-        // Clearly-labeled preview iTunes tracks for wider search catalog
         for (song in itunesTracks) {
             val key = normalizeKey(song.title, song.artist)
             if (seen.add(key)) combined.add(song)
+        }
+
+        if (combined.isNotEmpty()) {
+            searchSongsCache[cleanQuery] = CacheEntry(combined)
         }
         combined
     }
 
     suspend fun searchOnlineArtists(query: String): List<Artist> = coroutineScope {
-        if (query.isBlank()) return@coroutineScope emptyList()
+        val cleanQuery = query.trim().lowercase()
+        if (cleanQuery.isBlank()) return@coroutineScope emptyList()
+
+        searchArtistsCache[cleanQuery]?.let { if (it.isValid(ttlSearchMs)) return@coroutineScope it.data }
+
         val audiusDeferred = async { audiusMusic.searchArtists(query, limit = 15) }
         val itunesDeferred = async { onlineMusic.searchArtists(query, limit = 15) }
 
@@ -118,11 +183,19 @@ class MusicRepository @Inject constructor(
             val key = artist.name.trim().lowercase()
             if (seen.add(key)) combined.add(artist)
         }
+
+        if (combined.isNotEmpty()) {
+            searchArtistsCache[cleanQuery] = CacheEntry(combined)
+        }
         combined
     }
 
     suspend fun searchOnlineAlbums(query: String): List<Album> = coroutineScope {
-        if (query.isBlank()) return@coroutineScope emptyList()
+        val cleanQuery = query.trim().lowercase()
+        if (cleanQuery.isBlank()) return@coroutineScope emptyList()
+
+        searchAlbumsCache[cleanQuery]?.let { if (it.isValid(ttlSearchMs)) return@coroutineScope it.data }
+
         val audiusDeferred = async { audiusMusic.searchPlaylists(query, limit = 15) }
         val itunesDeferred = async { onlineMusic.searchAlbums(query, limit = 15) }
 
@@ -140,17 +213,81 @@ class MusicRepository @Inject constructor(
             val key = album.title.trim().lowercase()
             if (seen.add(key)) combined.add(album)
         }
+
+        if (combined.isNotEmpty()) {
+            searchAlbumsCache[cleanQuery] = CacheEntry(combined)
+        }
         combined
     }
 
-    suspend fun getTopArtists(): List<Artist> = coroutineScope {
+    suspend fun getTopArtists(forceRefresh: Boolean = false): List<Artist> = coroutineScope {
+        if (!forceRefresh) {
+            artistsCache?.let { if (it.isValid(ttlMetaMs)) return@coroutineScope it.data }
+        }
         val itunesArtists = try { onlineMusic.getTopArtists() } catch (e: Exception) { emptyList() }
+        if (itunesArtists.isNotEmpty()) {
+            artistsCache = CacheEntry(itunesArtists)
+        }
         itunesArtists
     }
 
-    suspend fun getTrendingAlbums(): List<Album> = coroutineScope {
+    suspend fun getTrendingAlbums(forceRefresh: Boolean = false): List<Album> = coroutineScope {
+        if (!forceRefresh) {
+            albumsCache?.let { if (it.isValid(ttlMetaMs)) return@coroutineScope it.data }
+        }
         val itunesAlbums = try { onlineMusic.getTrendingAlbums() } catch (e: Exception) { emptyList() }
+        if (itunesAlbums.isNotEmpty()) {
+            albumsCache = CacheEntry(itunesAlbums)
+        }
         itunesAlbums
+    }
+
+    /**
+     * Generates intelligent, multi-signal similar song recommendations based on a seed song.
+     */
+    suspend fun getRecommendations(seed: Song, limit: Int = 15): List<Song> = coroutineScope {
+        recommendationsCache[seed.id]?.let {
+            if (it.isValid(ttlRecommendationsMs)) return@coroutineScope it.data
+        }
+
+        // 1. Gather candidate pool across providers concurrently
+        val artistQuery = seed.artist.trim()
+        val genre = if (seed.album.isNotBlank()) seed.album else "Pop"
+
+        val artistAudiusDef = async { audiusMusic.searchSongs(artistQuery, limit = 15) }
+        val artistItunesDef = async { onlineMusic.searchSongs(artistQuery, limit = 15) }
+        val genreAudiusDef = async { audiusMusic.getTrendingTracksByGenre(genre, limit = 20) }
+        val genreItunesDef = async { onlineMusic.getGenreSongs(genre, limit = 20) }
+        val localSongsDef = async { try { mediaStore.getAllSongs() } catch (e: Exception) { emptyList() } }
+
+        val rawCandidates = mutableListOf<Song>()
+        rawCandidates.addAll(try { artistAudiusDef.await() } catch (e: Exception) { emptyList() })
+        rawCandidates.addAll(try { artistItunesDef.await() } catch (e: Exception) { emptyList() })
+        rawCandidates.addAll(try { genreAudiusDef.await() } catch (e: Exception) { emptyList() })
+        rawCandidates.addAll(try { genreItunesDef.await() } catch (e: Exception) { emptyList() })
+        rawCandidates.addAll(try { localSongsDef.await() } catch (e: Exception) { emptyList() })
+
+        // Supplement with cached featured songs if candidate pool is small
+        featuredCache?.data?.let { rawCandidates.addAll(it) }
+
+        // 2. Fetch User Preference Profile
+        val favSongs = try { favoriteDao.getAllFavorites().first() } catch (e: Exception) { emptyList() }
+        val recentSongs = try { recentlyPlayedDao.getRecentlyPlayed().first() } catch (e: Exception) { emptyList() }
+
+        val userProfile = UserPreferenceProfile(
+            favoriteSongIds = favSongs.map { it.songId }.toSet(),
+            favoriteArtists = favSongs.map { it.artist.trim().lowercase() }.toSet(),
+            recentSongIds   = recentSongs.map { it.songId },
+            playCounts      = recentSongs.groupingBy { it.songId }.eachCount()
+        )
+
+        // 3. Delegate to Recommendation Engine for scoring, diversity capping, and deduplication
+        val ranked = recommendationEngine.rankRecommendations(seed, rawCandidates, userProfile, limit)
+
+        if (ranked.isNotEmpty()) {
+            recommendationsCache[seed.id] = CacheEntry(ranked)
+        }
+        ranked
     }
 
     private fun normalizeKey(title: String, artist: String): String {

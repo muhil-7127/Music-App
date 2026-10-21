@@ -30,8 +30,8 @@ fun SearchScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val playback by viewModel.playbackState.collectAsState()
-    var query by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableStateOf(0) }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     val tabs = remember { listOf("All", "Songs", "Artists", "Albums") }
 
     val trendingPills = remember {
@@ -172,10 +172,23 @@ fun SearchScreen(
                         Text("Searching web tracks...", style = MaterialTheme.typography.bodyMedium.copy(color = SilverMid))
                     }
                 }
+            } else if (uiState.searchError != null && uiState.searchResults.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Rounded.CloudOff, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(64.dp))
+                        Spacer(Modifier.height(14.dp))
+                        Text("Search Connection Issue", style = MaterialTheme.typography.titleMedium.copy(color = TextPrimary))
+                        Text(uiState.searchError ?: "", style = MaterialTheme.typography.bodySmall.copy(color = TextTertiary))
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedButton(onClick = { viewModel.search(query) }) {
+                            Text("Retry Search", color = GoldPrimary)
+                        }
+                    }
+                }
             } else {
                 // Results based on tab
                 when (selectedTab) {
-                    0 -> { // All
+                    0 -> { // All (Songs, Artists, Albums)
                         if (uiState.searchResults.isEmpty() && uiState.searchArtists.isEmpty() && uiState.searchAlbums.isEmpty()) {
                             EmptySearchResults(query = query)
                         } else {
@@ -193,7 +206,7 @@ fun SearchScreen(
                                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                                         )
                                     }
-                                    items(uiState.searchResults) { song ->
+                                    items(uiState.searchResults, key = { it.id }) { song ->
                                         SongListItem(
                                             song = song,
                                             isFavorite = song.id in uiState.favoriteSongIds,
@@ -207,6 +220,52 @@ fun SearchScreen(
                                         GoldDivider(modifier = Modifier.padding(horizontal = 16.dp))
                                     }
                                 }
+                                if (uiState.searchArtists.isNotEmpty()) {
+                                    item {
+                                        Text(
+                                            "Artists (${uiState.searchArtists.size})",
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold, color = TextPrimary
+                                            ),
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                                        )
+                                        LazyRow(
+                                            contentPadding = PaddingValues(horizontal = 16.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                        ) {
+                                            items(uiState.searchArtists, key = { it.id }) { artist ->
+                                                ArtistCircleCard(
+                                                    artist = artist,
+                                                    onClick = { query = artist.name; selectedTab = 1 }
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.height(14.dp))
+                                    }
+                                }
+                                if (uiState.searchAlbums.isNotEmpty()) {
+                                    item {
+                                        Text(
+                                            "Albums (${uiState.searchAlbums.size})",
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold, color = TextPrimary
+                                            ),
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                                        )
+                                        LazyRow(
+                                            contentPadding = PaddingValues(horizontal = 16.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                        ) {
+                                            items(uiState.searchAlbums, key = { it.id }) { album ->
+                                                AlbumSquareCard(
+                                                    album = album,
+                                                    onClick = { query = album.title; selectedTab = 1 }
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.height(14.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -218,7 +277,7 @@ fun SearchScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(bottom = 80.dp)
                             ) {
-                                items(uiState.searchResults) { song ->
+                                items(uiState.searchResults, key = { it.id }) { song ->
                                     SongListItem(
                                         song = song,
                                         isFavorite = song.id in uiState.favoriteSongIds,
@@ -244,7 +303,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                items(uiState.searchArtists) { artist ->
+                                items(uiState.searchArtists, key = { it.id }) { artist ->
                                     ArtistCircleCard(
                                         artist = artist,
                                         onClick = { query = artist.name; selectedTab = 1 }
@@ -263,7 +322,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                items(uiState.searchAlbums) { album ->
+                                items(uiState.searchAlbums, key = { it.id }) { album ->
                                     AlbumSquareCard(
                                         album = album,
                                         onClick = { query = album.title; selectedTab = 1 }
