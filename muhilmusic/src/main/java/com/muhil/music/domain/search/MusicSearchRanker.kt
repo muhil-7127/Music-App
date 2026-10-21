@@ -189,10 +189,11 @@ class MusicSearchRanker @Inject constructor() {
             return RankedSearchResult(
                 topMatch = null,
                 movieSoundtrack = null,
-                songs = emptyList(),
+                rankedSongs = emptyList(),
+                allSoundtracks = emptyList(),
                 artists = emptyList(),
                 albums = emptyList(),
-                detectedIntent = QueryIntent.GENERAL
+                intent = QueryIntent.GENERAL
             )
         }
 

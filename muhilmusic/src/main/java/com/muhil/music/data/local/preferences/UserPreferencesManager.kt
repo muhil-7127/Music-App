@@ -184,4 +184,8 @@ class UserPreferencesManager @Inject constructor(
             preferences[KEY_PLAY_COUNTS] = obj.toString()
         }
     }
+
+    suspend fun saveSearchQuery(query: String) = addSearchQuery(query)
+    suspend fun recordSongSkipped(songId: Long) = recordSkip(songId)
+    suspend fun recordSongPlayed(songId: Long) = recordPlay(songId)
 }

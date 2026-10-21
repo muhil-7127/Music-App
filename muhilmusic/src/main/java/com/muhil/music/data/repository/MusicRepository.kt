@@ -156,10 +156,11 @@ class MusicRepository @Inject constructor(
             return@coroutineScope RankedSearchResult(
                 topMatch = null,
                 movieSoundtrack = null,
-                songs = emptyList(),
+                rankedSongs = emptyList(),
+                allSoundtracks = emptyList(),
                 artists = emptyList(),
                 albums = emptyList(),
-                detectedIntent = QueryIntent.GENERAL
+                intent = QueryIntent.GENERAL
             )
         }
 
@@ -279,7 +280,7 @@ class MusicRepository @Inject constructor(
                         MovieSoundtrack(
                             movieName = a.title.replace(Regex("(?i)original motion picture soundtrack|soundtrack|ost"), "").trim().ifEmpty { a.title },
                             composer = a.artist,
-                            albumArtUri = a.artworkUri,
+                            albumArtUri = a.artUri,
                             tracks = emptyList()
                         )
                     )
@@ -511,11 +512,11 @@ class MusicRepository @Inject constructor(
     val searchHistory: Flow<List<String>> get() = userPreferencesManager.searchHistory
 
     suspend fun setPreferredLanguage(lang: String) = userPreferencesManager.setPreferredLanguage(lang)
-    suspend fun saveSearchQuery(query: String) = userPreferencesManager.saveSearchQuery(query)
+    suspend fun saveSearchQuery(query: String) = userPreferencesManager.addSearchQuery(query)
     suspend fun removeSearchQuery(query: String) = userPreferencesManager.removeSearchQuery(query)
     suspend fun clearSearchHistory() = userPreferencesManager.clearSearchHistory()
-    suspend fun recordSongSkipped(songId: Long) = userPreferencesManager.recordSongSkipped(songId)
-    suspend fun recordSongPlayed(songId: Long) = userPreferencesManager.recordSongPlayed(songId)
+    suspend fun recordSongSkipped(songId: Long) = userPreferencesManager.recordSkip(songId)
+    suspend fun recordSongPlayed(songId: Long) = userPreferencesManager.recordPlay(songId)
 
     // ==========================================
     // Recently Played
