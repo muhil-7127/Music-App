@@ -14,19 +14,24 @@ data class FavoriteEntity(
     val uri: String = "",
     val duration: Long = 0L,
     val isOnline: Boolean = false,
+    val isPreview: Boolean = false,
+    val provider: String = Song.PROVIDER_LOCAL,
+    val providerTrackId: String? = null,
     val addedAt: Long = System.currentTimeMillis()
 ) {
     fun toSong(): Song = Song(
-        id          = songId,
-        title       = title,
-        artist      = artist,
-        album       = album,
-        albumArtUri = albumArtUri,
-        uri         = uri,
-        duration    = duration,
-        isOnline    = isOnline,
-        isPreview   = isOnline,
-        isFavorite  = true
+        id              = songId,
+        title           = title,
+        artist          = artist,
+        album           = album,
+        albumArtUri     = albumArtUri,
+        uri             = uri,
+        duration        = duration,
+        isOnline        = isOnline,
+        isPreview       = isPreview,
+        provider        = provider,
+        providerTrackId = providerTrackId,
+        isFavorite      = true
     )
 }
 
@@ -40,18 +45,23 @@ data class RecentlyPlayedEntity(
     val albumArtUri: String? = null,
     val uri: String = "",
     val duration: Long = 0L,
-    val isOnline: Boolean = false
+    val isOnline: Boolean = false,
+    val isPreview: Boolean = false,
+    val provider: String = Song.PROVIDER_LOCAL,
+    val providerTrackId: String? = null
 ) {
     fun toSong(): Song = Song(
-        id          = songId,
-        title       = title,
-        artist      = artist,
-        album       = album,
-        albumArtUri = albumArtUri,
-        uri         = uri,
-        duration    = duration,
-        isOnline    = isOnline,
-        isPreview   = isOnline
+        id              = songId,
+        title           = title,
+        artist          = artist,
+        album           = album,
+        albumArtUri     = albumArtUri,
+        uri             = uri,
+        duration        = duration,
+        isOnline        = isOnline,
+        isPreview       = isPreview,
+        provider        = provider,
+        providerTrackId = providerTrackId
     )
 }
 
@@ -76,18 +86,23 @@ data class PlaylistSongEntity(
     val uri: String = "",
     val albumArtUri: String? = null,
     val duration: Long = 0L,
-    val isOnline: Boolean = false
+    val isOnline: Boolean = false,
+    val isPreview: Boolean = false,
+    val provider: String = Song.PROVIDER_LOCAL,
+    val providerTrackId: String? = null
 ) {
     fun toSong(): Song = Song(
-        id          = songId,
-        title       = title,
-        artist      = artist,
-        album       = album,
-        albumArtUri = albumArtUri,
-        uri         = uri,
-        duration    = duration,
-        isOnline    = isOnline,
-        isPreview   = isOnline
+        id              = songId,
+        title           = title,
+        artist          = artist,
+        album           = album,
+        albumArtUri     = albumArtUri,
+        uri             = uri,
+        duration        = duration,
+        isOnline        = isOnline,
+        isPreview       = isPreview,
+        provider        = provider,
+        providerTrackId = providerTrackId
     )
 }
 

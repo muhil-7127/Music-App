@@ -1,10 +1,10 @@
-﻿name: Build Muhil Music APK
+name: Build Muhil Music APK
 
 on:
   push:
-    branches: [ "abc", "main" ]
+    branches: [ "abc", "main", "feature/**" ]
   pull_request:
-    branches: [ "abc", "main" ]
+    branches: [ "abc", "main", "feature/**" ]
   workflow_dispatch:
 
 permissions:
@@ -68,6 +68,11 @@ jobs:
 
       - name: Make Gradle Wrapper Executable
         run: chmod +x gradlew
+
+      - name: Run Unit Tests
+        run: ./gradlew :muhilmusic:testDebugUnitTest --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
       - name: Build Muhil Music Debug APK
         run: ./gradlew :muhilmusic:assembleDebug --stacktrace --no-daemon

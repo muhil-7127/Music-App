@@ -3,9 +3,12 @@ package com.muhil.music.data.repository
 import com.muhil.music.data.local.dao.*
 import com.muhil.music.data.local.entity.*
 import com.muhil.music.data.mediastore.MediaStoreDataSource
+import com.muhil.music.data.remote.AudiusMusicDataSource
 import com.muhil.music.data.remote.OnlineLyricsDataSource
 import com.muhil.music.data.remote.OnlineMusicDataSource
 import com.muhil.music.domain.model.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
@@ -14,6 +17,7 @@ import javax.inject.Singleton
 
 @Singleton
 class MusicRepository @Inject constructor(
+    private val audiusMusic: AudiusMusicDataSource,
     private val onlineMusic: OnlineMusicDataSource,
     private val onlineLyrics: OnlineLyricsDataSource,
     private val mediaStore: MediaStoreDataSource,
@@ -24,22 +28,136 @@ class MusicRepository @Inject constructor(
 ) {
 
     // ==========================================
-    // Online Music (Primary Source)
+    // Online Music (Primary Source: Audius Full Tracks + iTunes Fallback)
     // ==========================================
 
-    suspend fun getFeaturedSongs(): List<Song> = onlineMusic.getFeaturedSongs()
+    suspend fun getFeaturedSongs(): List<Song> = coroutineScope {
+        val audiusDeferred = async { audiusMusic.getTrendingTracks(limit = 25) }
+        val itunesDeferred = async { onlineMusic.getFeaturedSongs() }
 
-    suspend fun getGenreSongs(genre: String): List<Song> = onlineMusic.getGenreSongs(genre)
+        val audiusTracks = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
+        val itunesTracks = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
 
-    suspend fun searchOnlineSongs(query: String): List<Song> = onlineMusic.searchSongs(query)
+        val seen = mutableSetOf<String>()
+        val combined = mutableListOf<Song>()
 
-    suspend fun searchOnlineArtists(query: String): List<Artist> = onlineMusic.searchArtists(query)
+        // Prioritize authorized full-length Audius tracks
+        for (song in audiusTracks) {
+            val key = normalizeKey(song.title, song.artist)
+            if (seen.add(key)) combined.add(song)
+        }
+        // Supplement with iTunes catalog tracks
+        for (song in itunesTracks) {
+            val key = normalizeKey(song.title, song.artist)
+            if (seen.add(key)) combined.add(song)
+        }
+        combined
+    }
 
-    suspend fun searchOnlineAlbums(query: String): List<Album> = onlineMusic.searchAlbums(query)
+    suspend fun getGenreSongs(genre: String): List<Song> = coroutineScope {
+        val audiusDeferred = async { audiusMusic.getTrendingTracksByGenre(genre, limit = 25) }
+        val itunesDeferred = async { onlineMusic.getGenreSongs(genre) }
 
-    suspend fun getTopArtists(): List<Artist> = onlineMusic.getTopArtists()
+        val audiusTracks = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
+        val itunesTracks = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
 
-    suspend fun getTrendingAlbums(): List<Album> = onlineMusic.getTrendingAlbums()
+        val seen = mutableSetOf<String>()
+        val combined = mutableListOf<Song>()
+
+        for (song in audiusTracks) {
+            val key = normalizeKey(song.title, song.artist)
+            if (seen.add(key)) combined.add(song)
+        }
+        for (song in itunesTracks) {
+            val key = normalizeKey(song.title, song.artist)
+            if (seen.add(key)) combined.add(song)
+        }
+        combined
+    }
+
+    suspend fun searchOnlineSongs(query: String): List<Song> = coroutineScope {
+        if (query.isBlank()) return@coroutineScope emptyList()
+        val audiusDeferred = async { audiusMusic.searchSongs(query, limit = 30) }
+        val itunesDeferred = async { onlineMusic.searchSongs(query, limit = 30) }
+
+        val audiusTracks = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
+        val itunesTracks = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
+
+        val seen = mutableSetOf<String>()
+        val combined = mutableListOf<Song>()
+
+        // Full-length Audius tracks take priority
+        for (song in audiusTracks) {
+            val key = normalizeKey(song.title, song.artist)
+            if (seen.add(key)) combined.add(song)
+        }
+        // Clearly-labeled preview iTunes tracks for wider search catalog
+        for (song in itunesTracks) {
+            val key = normalizeKey(song.title, song.artist)
+            if (seen.add(key)) combined.add(song)
+        }
+        combined
+    }
+
+    suspend fun searchOnlineArtists(query: String): List<Artist> = coroutineScope {
+        if (query.isBlank()) return@coroutineScope emptyList()
+        val audiusDeferred = async { audiusMusic.searchArtists(query, limit = 15) }
+        val itunesDeferred = async { onlineMusic.searchArtists(query, limit = 15) }
+
+        val audiusArtists = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
+        val itunesArtists = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
+
+        val seen = mutableSetOf<String>()
+        val combined = mutableListOf<Artist>()
+
+        for (artist in audiusArtists) {
+            val key = artist.name.trim().lowercase()
+            if (seen.add(key)) combined.add(artist)
+        }
+        for (artist in itunesArtists) {
+            val key = artist.name.trim().lowercase()
+            if (seen.add(key)) combined.add(artist)
+        }
+        combined
+    }
+
+    suspend fun searchOnlineAlbums(query: String): List<Album> = coroutineScope {
+        if (query.isBlank()) return@coroutineScope emptyList()
+        val audiusDeferred = async { audiusMusic.searchPlaylists(query, limit = 15) }
+        val itunesDeferred = async { onlineMusic.searchAlbums(query, limit = 15) }
+
+        val audiusPlaylists = try { audiusDeferred.await() } catch (e: Exception) { emptyList() }
+        val itunesAlbums = try { itunesDeferred.await() } catch (e: Exception) { emptyList() }
+
+        val seen = mutableSetOf<String>()
+        val combined = mutableListOf<Album>()
+
+        for (album in audiusPlaylists) {
+            val key = album.title.trim().lowercase()
+            if (seen.add(key)) combined.add(album)
+        }
+        for (album in itunesAlbums) {
+            val key = album.title.trim().lowercase()
+            if (seen.add(key)) combined.add(album)
+        }
+        combined
+    }
+
+    suspend fun getTopArtists(): List<Artist> = coroutineScope {
+        val itunesArtists = try { onlineMusic.getTopArtists() } catch (e: Exception) { emptyList() }
+        itunesArtists
+    }
+
+    suspend fun getTrendingAlbums(): List<Album> = coroutineScope {
+        val itunesAlbums = try { onlineMusic.getTrendingAlbums() } catch (e: Exception) { emptyList() }
+        itunesAlbums
+    }
+
+    private fun normalizeKey(title: String, artist: String): String {
+        val cleanTitle = title.lowercase().replace(Regex("[^a-z0-9]"), "")
+        val cleanArtist = artist.lowercase().replace(Regex("[^a-z0-9]"), "")
+        return "${cleanTitle}_$cleanArtist"
+    }
 
     // ==========================================
     // Local Music (Secondary Device Source)
@@ -58,7 +176,8 @@ class MusicRepository @Inject constructor(
                 artist    = albumSongs.first().artist,
                 artUri    = albumSongs.first().albumArtUri,
                 songCount = albumSongs.size,
-                isOnline  = false
+                isOnline  = false,
+                provider  = Song.PROVIDER_LOCAL
             )
         }.sortedBy { it.title }
     }
@@ -72,7 +191,8 @@ class MusicRepository @Inject constructor(
                 songCount  = artistSongs.size,
                 albumCount = artistSongs.map { it.album }.distinct().size,
                 artUri     = artistSongs.first().albumArtUri,
-                isOnline   = false
+                isOnline   = false,
+                provider   = Song.PROVIDER_LOCAL
             )
         }.sortedBy { it.name }
     }
@@ -92,14 +212,17 @@ class MusicRepository @Inject constructor(
     suspend fun addFavorite(song: Song) {
         favoriteDao.addFavorite(
             FavoriteEntity(
-                songId      = song.id,
-                title       = song.title,
-                artist      = song.artist,
-                album       = song.album,
-                albumArtUri = song.albumArtUri,
-                uri         = song.uri,
-                duration    = song.duration,
-                isOnline    = song.isOnline
+                songId          = song.id,
+                title           = song.title,
+                artist          = song.artist,
+                album           = song.album,
+                albumArtUri     = song.albumArtUri,
+                uri             = song.uri,
+                duration        = song.duration,
+                isOnline        = song.isOnline,
+                isPreview       = song.isPreview,
+                provider        = song.provider,
+                providerTrackId = song.providerTrackId
             )
         )
     }
@@ -116,14 +239,17 @@ class MusicRepository @Inject constructor(
     suspend fun addToRecentlyPlayed(song: Song) {
         recentlyPlayedDao.insert(
             RecentlyPlayedEntity(
-                songId      = song.id,
-                title       = song.title,
-                artist      = song.artist,
-                album       = song.album,
-                albumArtUri = song.albumArtUri,
-                uri         = song.uri,
-                duration    = song.duration,
-                isOnline    = song.isOnline
+                songId          = song.id,
+                title           = song.title,
+                artist          = song.artist,
+                album           = song.album,
+                albumArtUri     = song.albumArtUri,
+                uri             = song.uri,
+                duration        = song.duration,
+                isOnline        = song.isOnline,
+                isPreview       = song.isPreview,
+                provider        = song.provider,
+                providerTrackId = song.providerTrackId
             )
         )
         recentlyPlayedDao.trimOld()
@@ -152,16 +278,19 @@ class MusicRepository @Inject constructor(
     suspend fun addSongToPlaylist(playlistId: String, song: Song, position: Int = 0) {
         playlistDao.addSongToPlaylist(
             PlaylistSongEntity(
-                playlistId  = playlistId,
-                songId      = song.id,
-                position    = position,
-                title       = song.title,
-                artist      = song.artist,
-                album       = song.album,
-                uri         = song.uri,
-                albumArtUri = song.albumArtUri,
-                duration    = song.duration,
-                isOnline    = song.isOnline
+                playlistId      = playlistId,
+                songId          = song.id,
+                position        = position,
+                title           = song.title,
+                artist          = song.artist,
+                album           = song.album,
+                uri             = song.uri,
+                albumArtUri     = song.albumArtUri,
+                duration        = song.duration,
+                isOnline        = song.isOnline,
+                isPreview       = song.isPreview,
+                provider        = song.provider,
+                providerTrackId = song.providerTrackId
             )
         )
     }
@@ -185,7 +314,7 @@ class MusicRepository @Inject constructor(
             }
         }
 
-        // 2. Fetch from online lyrics provider (LRCLIB)
+        // 2. Fetch from online lyrics provider (LRCLIB) with accurate duration
         val onlineState = onlineLyrics.fetchLyrics(song.title, song.artist, song.duration)
         if (onlineState is LyricsState.Synced) {
             val raw = onlineState.lines.joinToString("\n") { "[${formatLrcTime(it.timestampMs)}]${it.text}" }

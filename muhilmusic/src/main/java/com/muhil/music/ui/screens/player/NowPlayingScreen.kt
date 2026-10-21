@@ -112,6 +112,9 @@ fun NowPlayingScreen(
                         if (song?.isPreview == true) {
                             Spacer(Modifier.width(8.dp))
                             WebPreviewBadge()
+                        } else if (song?.isOnline == true) {
+                            Spacer(Modifier.width(8.dp))
+                            FullTrackBadge()
                         }
                     }
                 }

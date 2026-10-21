@@ -75,6 +75,26 @@ fun WebPreviewBadge(modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun FullTrackBadge(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(4.dp),
+        color = Color(0xFF10B981).copy(alpha = 0.15f),
+        border = BorderStroke(0.5.dp, Color(0xFF10B981).copy(alpha = 0.7f))
+    ) {
+        Text(
+            text = "FULL TRACK",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF34D399)
+            ),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+        )
+    }
+}
+
+@Composable
 fun SongListItem(
     song: Song,
     isFavorite: Boolean = false,
@@ -111,6 +131,9 @@ fun SongListItem(
                 if (song.isPreview) {
                     Spacer(Modifier.width(6.dp))
                     WebPreviewBadge()
+                } else if (song.isOnline) {
+                    Spacer(Modifier.width(6.dp))
+                    FullTrackBadge()
                 }
             }
             Spacer(Modifier.height(3.dp))
@@ -173,6 +196,12 @@ fun FeaturedSongCard(
                 )
                 if (song.isPreview) {
                     WebPreviewBadge(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                    )
+                } else if (song.isOnline) {
+                    FullTrackBadge(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(6.dp)
@@ -403,6 +432,9 @@ fun MiniNowPlayingBar(
                     if (song.isPreview) {
                         Spacer(Modifier.width(6.dp))
                         WebPreviewBadge()
+                    } else if (song.isOnline) {
+                        Spacer(Modifier.width(6.dp))
+                        FullTrackBadge()
                     }
                 }
                 Spacer(Modifier.height(2.dp))

@@ -1,4 +1,4 @@
-﻿package com.muhil.music.data.local.db
+package com.muhil.music.data.local.db
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
@@ -13,7 +13,7 @@ import com.muhil.music.data.local.entity.*
         PlaylistSongEntity::class,
         CachedLyricsEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MuhilDatabase : RoomDatabase() {

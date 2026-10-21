@@ -169,16 +169,18 @@ class OnlineMusicDataSource @Inject constructor() {
 
             list.add(
                 Song(
-                    id          = trackId,
-                    title       = trackName,
-                    artist      = artistName,
-                    album       = collectionName,
-                    duration    = trackTimeMillis,
-                    uri         = previewUrl,
-                    albumArtUri = artworkHighRes,
-                    isOnline    = true,
-                    isPreview   = true,
-                    genre       = genre
+                    id              = trackId,
+                    title           = trackName,
+                    artist          = artistName,
+                    album           = collectionName,
+                    duration        = trackTimeMillis,
+                    uri             = previewUrl,
+                    albumArtUri     = artworkHighRes,
+                    isOnline        = true,
+                    isPreview       = true,
+                    genre           = genre,
+                    provider        = Song.PROVIDER_ITUNES,
+                    providerTrackId = trackId.toString()
                 )
             )
         }
@@ -198,10 +200,12 @@ class OnlineMusicDataSource @Inject constructor() {
 
             list.add(
                 Artist(
-                    id        = artistId,
-                    name      = artistName,
-                    songCount = 0,
-                    isOnline  = true
+                    id         = artistId,
+                    name       = artistName,
+                    songCount  = 0,
+                    isOnline   = true,
+                    provider   = Song.PROVIDER_ITUNES,
+                    providerId = artistId.toString()
                 )
             )
         }
@@ -228,12 +232,14 @@ class OnlineMusicDataSource @Inject constructor() {
 
             list.add(
                 Album(
-                    id        = collectionId,
-                    title     = collectionName,
-                    artist    = artistName,
-                    artUri    = artworkHighRes,
-                    songCount = trackCount,
-                    isOnline  = true
+                    id         = collectionId,
+                    title      = collectionName,
+                    artist     = artistName,
+                    artUri     = artworkHighRes,
+                    songCount  = trackCount,
+                    isOnline   = true,
+                    provider   = Song.PROVIDER_ITUNES,
+                    providerId = collectionId.toString()
                 )
             )
         }

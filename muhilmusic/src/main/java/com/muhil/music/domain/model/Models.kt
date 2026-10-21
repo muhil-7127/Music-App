@@ -14,8 +14,16 @@ data class Song(
     val size: Long = 0L,
     val isOnline: Boolean = false,
     val isPreview: Boolean = false,
-    val genre: String? = null
-)
+    val genre: String? = null,
+    val provider: String = PROVIDER_LOCAL,
+    val providerTrackId: String? = null
+) {
+    companion object {
+        const val PROVIDER_LOCAL = "local"
+        const val PROVIDER_AUDIUS = "audius"
+        const val PROVIDER_ITUNES = "itunes"
+    }
+}
 
 data class Album(
     val id: Long,
@@ -24,7 +32,9 @@ data class Album(
     val artUri: String? = null,
     val songCount: Int = 0,
     val year: Int = 0,
-    val isOnline: Boolean = false
+    val isOnline: Boolean = false,
+    val provider: String = Song.PROVIDER_LOCAL,
+    val providerId: String? = null
 )
 
 data class Artist(
@@ -33,7 +43,9 @@ data class Artist(
     val albumCount: Int = 0,
     val songCount: Int = 0,
     val artUri: String? = null,
-    val isOnline: Boolean = false
+    val isOnline: Boolean = false,
+    val provider: String = Song.PROVIDER_LOCAL,
+    val providerId: String? = null
 )
 
 data class Playlist(
