@@ -163,7 +163,8 @@ class JioSaavnMusicDataSource @Inject constructor() {
 
             val title = unescapeHtml(rawTitle)
             val artist = unescapeHtml(item.optString("music", item.optString("artist", "Kollywood")))
-            val year = item.optInt("year", 0)
+            val year = item.optString("year", "").toIntOrNull() ?: item.optInt("year", 0)
+            val songCount = item.optString("song_count", "").toIntOrNull() ?: item.optInt("song_count", 0)
             val artUri = resolveArtworkUrl(item.optString("image", ""))
 
             list.add(
@@ -172,7 +173,7 @@ class JioSaavnMusicDataSource @Inject constructor() {
                     title = title,
                     artist = artist,
                     artUri = artUri,
-                    songCount = 0,
+                    songCount = songCount,
                     year = year,
                     isOnline = true,
                     provider = Song.PROVIDER_SAAVN,

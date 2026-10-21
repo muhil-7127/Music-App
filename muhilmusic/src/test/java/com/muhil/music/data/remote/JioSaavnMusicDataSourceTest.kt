@@ -114,7 +114,7 @@ class JioSaavnMusicDataSourceTest {
         assertEquals("Leo \"Original Soundtrack\"", album.title)
         assertEquals("Anirudh Ravichander", album.artist)
         assertEquals(7, album.songCount)
-        assertEquals("2023", album.year)
+        assertEquals(2023, album.year)
         assertEquals(Song.PROVIDER_SAAVN, album.provider)
         assertEquals("https://c.saavncdn.com/500x500.jpg", album.artUri)
     }
