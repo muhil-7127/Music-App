@@ -131,7 +131,11 @@ class OnlineLyricsDataSource @Inject constructor() {
     }
 
     fun sanitize(input: String): String {
-        return input.replace(Regex("\\(.*\\)|\\[.*]|feat\\..*|ft\\..*"), "").trim()
+        return input
+            .replace(Regex("\\(.*?\\)|\\[.*?\\]"), "")
+            .replace(Regex("\\b(feat\\.|ft\\.|featuring)\\b.*$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s*-\\s*(Deluxe Edition|Deluxe|Remastered|Remaster|Bonus Track|Bonus|Live|Single|EP|Radio Edit).*$", RegexOption.IGNORE_CASE), "")
+            .trim()
     }
 
     private fun httpGet(urlString: String): String? {

@@ -80,6 +80,10 @@ android {
     lint {
         abortOnError = false
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -157,4 +161,5 @@ dependencies {
     implementation(libs.guava)
 
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
 }
