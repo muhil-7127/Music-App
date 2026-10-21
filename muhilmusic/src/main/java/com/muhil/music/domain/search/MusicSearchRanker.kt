@@ -305,6 +305,12 @@ class MusicSearchRanker @Inject constructor() {
                 score += 30.0
             }
         }
+        // Tier 2B: Artist Intent Match (tracks by the queried artist)
+        else if (intent == QueryIntent.ARTIST && (canonArtist == canonQuery || normArtist == normQuery || canonArtist.contains(canonQuery) || normArtist.contains(normQuery))) {
+            score = if (canonArtist == canonQuery || normArtist == normQuery) 880.0 else 830.0
+            tier = 2
+            reason = "Artist Track Match"
+        }
         // Tier 3: Very Close Title Match / Transliteration / Prefix Match
         else if (canonTitle.startsWith(canonQuery) || canonQuery.startsWith(canonTitle)) {
             score = 750.0
